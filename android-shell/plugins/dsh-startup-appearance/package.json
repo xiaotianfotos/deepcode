@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-android/dsh-startup-appearance",
+  "version": "0.1.0",
+  "description": "Optional native startup animation",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {".": "./lib/index.js", "./client": "./lib/client.js", "./package.json": "./package.json"},
+  "dsh": {"client": {"inject": ["@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-settings-plugins"], "platform": "web"}},
+  "files": ["lib"],
+  "license": "MIT",
+  "private": true,
+  "scripts": {"build": "node build.mjs", "test": "node --test tests/*.test.mjs"},
+  "devDependencies": {"@deepseek-ai/schemastery": "3.18.2", "esbuild": "^0.25.0", "react": "^18.2.0"}
+}

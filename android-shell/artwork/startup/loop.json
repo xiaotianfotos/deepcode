@@ -1,0 +1,7 @@
+{
+  "sourceSha256": "d85f908d06598fc52fe784fa2d3e19170c51a712a6e2dc609ef86f3ffaea203f",
+  "fps": 24,
+  "startFrame": 8,
+  "endFrameExclusive": 80,
+  "reason": "Matching whale pose and forward motion; omit the repeated endpoint for a 72-frame cycle."
+}
