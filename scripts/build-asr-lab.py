@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build the pinned Android ARM64 ASR engine and standalone APK. Source env.sh."""
+"""Build pinned Android ARM64 ASR; --native-only skips the standalone lab APK."""
+import argparse
 import hashlib
 import json
 import os
@@ -8,6 +9,10 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--native-only', action='store_true',
+                    help='Build the compatibility engine and licenses without Gradle or an APK')
+args = parser.parse_args()
 SDK = Path(os.environ['ANDROID_HOME'])
 NDK = SDK / 'ndk/27.2.12479018'
 PROJECT = ROOT / 'asr-lab'
@@ -18,6 +23,11 @@ SOURCES = {
 }
 def run(args):
     subprocess.run([str(a) for a in args], check=True, cwd=ROOT)
+def digest(path):
+    with path.open('rb') as source:
+        return hashlib.file_digest(source, 'sha256').hexdigest()
+(ROOT / '.tools').mkdir(parents=True, exist_ok=True)
+(ROOT / 'artifacts').mkdir(parents=True, exist_ok=True)
 for directory, (repo, revision) in SOURCES.items():
     dest = ROOT / '.tools' / directory
     if not dest.exists():
@@ -64,14 +74,17 @@ for name in ['cpp-httplib', 'miniaudio', 'nlohmann', 'stb', 'minja']:
         for candidate in folder.glob('*'):
             if candidate.name.upper().startswith(('LICENSE', 'COPYING')):
                 shutil.copyfile(candidate, licenses/(name+'-'+candidate.name))
-(PROJECT/'local.properties').write_text('sdk.dir='+str(SDK)+'\n')
-run([ROOT/'android-shell/gradlew', '-p', PROJECT, ':app:assembleDebug', '--offline', '--console=plain', '--max-workers=4'])
-out = ROOT/'artifacts/qwen-asr-lab-v0.1.0.apk'
-shutil.copyfile(PROJECT/'app/build/outputs/apk/debug/app-debug.apk', out)
-run([SDK/'build-tools/35.0.0/apksigner', 'verify', '--verbose', out])
-run([SDK/'build-tools/35.0.0/zipalign', '-c', '-P', '16', '4', out])
-receipt = {'apk': str(out), 'bytes': out.stat().st_size, 'sha256': hashlib.file_digest(out.open('rb'), 'sha256').hexdigest(),
-           'sources': SOURCES, 'ndk': NDK.name, 'abi': 'arm64-v8a', 'gpu': 'Vulkan',
-           'binarySha256': hashlib.file_digest(native.open('rb'), 'sha256').hexdigest(), 'elfLoadAlignmentBytes': 16384}
-out.with_suffix('.json').write_text(json.dumps(receipt, indent=2)+'\n')
+receipt = {'sources': SOURCES, 'ndk': NDK.name, 'abi': 'arm64-v8a', 'gpu': 'Vulkan',
+           'buildMode': 'native-only' if args.native_only else 'apk',
+           'binarySha256': digest(native), 'elfLoadAlignmentBytes': 16384}
+if not args.native_only:
+    (PROJECT/'local.properties').write_text('sdk.dir='+str(SDK)+'\n')
+    run([ROOT/'android-shell/gradlew', '-p', PROJECT, ':app:assembleDebug', '--console=plain', '--max-workers=4'])
+    out = ROOT/'artifacts/qwen-asr-lab-v0.1.0.apk'
+    shutil.copyfile(PROJECT/'app/build/outputs/apk/debug/app-debug.apk', out)
+    run([SDK/'build-tools/35.0.0/apksigner', 'verify', '--verbose', out])
+    run([SDK/'build-tools/35.0.0/zipalign', '-c', '-P', '16', '4', out])
+    receipt.update(apk=str(out), bytes=out.stat().st_size,
+                   sha256=digest(out))
+(ROOT/'artifacts/qwen-asr-lab-v0.1.0.json').write_text(json.dumps(receipt, indent=2)+'\n')
 print(json.dumps(receipt, indent=2))

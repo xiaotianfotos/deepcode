@@ -4,7 +4,7 @@
 
 ## 用户入口
 
-安装 `local-debian` APK 后选择一个项目，可以直接告诉 Agent：
+按 [首次构建与部署](FIRST-DEPLOY.md) 安装包含 Debian 插件和 bundle 的 APK 后选择一个项目，可以直接告诉 Agent：
 
 > 用 debian_status 检查环境；如未安装，调用 debian_install。然后用 debian_exec 安装需要的软件，长任务放后台，输出保存到 /workspace。
 
@@ -48,7 +48,11 @@ files/home/.dsh/debian/
 
 ## 构建与安装
 
-根目录执行：
+当前 ARM64 完整装配使用 [首次构建与部署](FIRST-DEPLOY.md) 的 `scripts/first-build.py`。其 inputs 阶段准备固定 Debian/PRoot 输入，assemble 阶段装配插件和 bundle，最终 APK 由 `artifacts/first-build.json` 定位。安装前运行 `scripts/deploy-source.py --check --serial <完整serial>`；全部预检通过且获得目标设备更新授权后才显式 `--install`，不得卸载或清除已有 Debian 数据。
+
+### 历史双 ABI 预览链（仅 0.13.3 基线维护）
+
+以下命令仅适用于匹配的旧基线与锁文件；当前首次构建不用该 overlay/build-baseline 链。根目录执行：
 
 ```sh
 source scripts/env.sh
@@ -70,7 +74,7 @@ python3 scripts/build-baseline.py arm64 --debian
 
 `docs/debian-inputs.lock.json` 固定 rootfs OCI manifest/layer 和三个 Termux 包的 SHA-256；只有主动运行 `fetch-debian-inputs.py --resolve` 才刷新锁。这里复现的是固定基础环境；后续 apt 使用正常软件仓库，包版本可能变化，不能据此声称任意未来的 apt 安装按字节复现。工具安装命令与本次版本清单随验收记录保存。
 
-最终候选包按 `releases/debian-preview-20260909/manifest.json` 校验；设备安装和基础验收入口：
+历史预览包使用 `releases/debian-preview-20260909/manifest.json`，该本地产物清单不随源码提供。以下旧安装和验收脚本仅适用该基线及其 fixture，不能用于当前 APK 或新设备的通用安装：
 
 ```sh
 python3 scripts/install-device.py DEVICE_SERIAL --debian
@@ -107,7 +111,9 @@ Android 后台时限、Doze 和澎湃 OS 进程管理仍然适用；可启动 We
 5. 验证真实外置盘拔出、权限撤销/恢复、APK 升级后的环境和项目保留。
 6. 再根据温度、内存、电量和耗时确定实际使用上限；模拟器结果不作为平板性能承诺。
 
-## 已验收结果
+## 历史预览验收记录
+
+以下记录仅描述旧预览版本的覆盖范围，不代表当前 checkout、首次构建或新设备已完成相同验收。
 
 专用 Android 15 / x86_64 模拟器 `emulator-5580`，实际 APK Agent 使用局域网模型执行工具；不是只通过 adb/run-as 手工运行 Linux 程序。
 

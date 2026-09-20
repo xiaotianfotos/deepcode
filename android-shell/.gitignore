@@ -25,3 +25,11 @@ __pycache__/
 
 # 本地临时工作区（排查截图与中间产物）：0.14.0 两次误入提交后固化
 .deploy-tmp/
+
+# Generated first-build inputs and copied plugin/native assets.
+app/src/main/jniLibs/
+app/src/main/assets/plugins/
+app/src/main/assets/licenses/voice-*
+app/src/main/assets/patched/speech-services-composition.yml
+app/src/main/assets/patched/startup-appearance-composition.yml
+app/src/main/assets/patched/xiaomi-remote-composition.yml

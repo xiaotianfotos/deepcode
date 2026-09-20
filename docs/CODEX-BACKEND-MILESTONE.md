@@ -15,9 +15,13 @@ DSH 前端和原语音/手柄/Voice Deck 保留。新会话选择 Codex Harness 
 - `scripts/prepare-codex-runtime.py`：验证固定 tarball 的 SHA-256/SHA-512，再准备 APK 原生库；不执行 npm 安装脚本。
 - `scripts/probe-codex-android.py`：独立工作目录的无账号协议探针。
 
-## 构建
+## 当前构建与部署
 
-先在插件目录运行 `node build.mjs`，然后仓库根目录：
+新 checkout 使用 [首次构建与部署](FIRST-DEPLOY.md) 的 `scripts/first-build.py`，从公开固定输入装配 ARM64 插件、运行时和 APK，生成 `artifacts/first-build.json`。部署先用 `scripts/deploy-source.py --check --serial <完整serial>`；签名和忙态预检通过且获得目标设备授权后才显式 `--install`。本文历史验收记录不代表新构建已经部署或用户已登录。
+
+### 历史构建（仅 0.13.3 基线维护）
+
+以下命令仅适用于匹配的旧基线、锁文件和回执，不得用于覆盖当前 0.14 装配。先在插件目录运行 `node build.mjs`，然后仓库根目录：
 
 ```bash
 source scripts/env.sh
@@ -25,7 +29,7 @@ python3 scripts/overlay-fs-adapter.py arm64 --codex
 python3 scripts/build-baseline.py arm64 --codex
 ```
 
-产物 `artifacts/dsh-v0.13.3-local-codex-arm64.apk`；保留当前 ASR、PS5、Deck 与折叠 UI。基础 Node/DSH 仍来自已校验快照，未宣称全量重编译。此构建目前只支持 ARM64。此前 local-voice-debug 包作为回退保留。
+产物 `artifacts/dsh-v0.13.3-local-codex-arm64.apk`；保留当前 ASR、PS5、Deck 与折叠 UI。基础 Node/DSH 仍来自已校验快照，未宣称全量重编译。此构建目前只支持 ARM64。历史产物不随源码提供，也不是当前安装或回退的默认来源。
 
 ## 运行时与限制
 
@@ -37,7 +41,7 @@ python3 scripts/build-baseline.py arm64 --codex
 
 ## 使用
 
-1. 设置 → 插件 → 插件配置 → Codex：启用后端，点击“登录 Codex”，在系统浏览器完成账号授权。当前验收平板已登录。
+1. 设置 → 插件 → 插件配置 → Codex：启用后端，点击“登录 Codex”，在系统浏览器完成账号授权。登录状态属于用户设备，不由源码提供。
 2. 新建会话时选择 Codex Harness，再从原模型菜单选择账号可用模型；实测 GPT-6 Astra。
 3. 在该会话权限菜单明确选择完全权限。原 DSH 会话的权限和模型默认值不变。
 4. 继续使用原聊天输入、语音草稿或 PS5 工作台。关闭后端会拒绝新 Codex 请求；重新启用可继续原 Thread。
@@ -67,7 +71,9 @@ python3 scripts/build-baseline.py arm64 --codex
 - 去掉 Relay 强制切回聊天 tab 的 AdvancedDebugGuard，保留工作台及轨迹视图。
 - 原生辅助文件名映射和 passwd Shell 适配见上述运行时说明；不替换 Codex 的规划/工具决策。
 
-## 当前验证证据
+## 历史验证证据（不作为构建输入）
+
+下列路径是旧里程碑的本地记录索引，不随公开源码分发；缺失不阻塞首次构建。新验证证据保存在操作者自己的 `.local/validation/`。
 
 - `validation/2026-09-10-codex/runtime-probe.json`：已安装 APK 的原生 launcher、模型目录、Thread、Shell、Node 24.18.0、Git 2.55.0 通过；同一报告保留 readOnly 未隔离的失败证据。
 - `validation/2026-09-10-codex/android-plugin-tests.txt`：9/9 通过；凭据字段过滤、登录回调、CSRF、忙态退出保护、登录/取消串行化、发送中与乱序完成事件保护、进程崩溃和重连。
@@ -81,7 +87,7 @@ python3 scripts/build-baseline.py arm64 --codex
 - `termux-tools.json`：真实 GPT-6 工具调用经默认 Shell，Node 24.18.0 / Git 2.55.0 / 文件读回全部退出码 0。
 - `permission-denied-final.json`：工作区限制模式被拒绝，`should-not-exist.txt` 未生成；随后恢复验收会话原本的完全访问设置。
 
-## 最终产物
+## 历史里程碑产物
 
 - APK：`artifacts/dsh-v0.13.3-local-codex-arm64.apk`。
 - 回执：`validation/2026-09-10-codex/release.json` 与 `build.json`。

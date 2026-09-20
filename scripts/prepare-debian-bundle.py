@@ -19,6 +19,7 @@ for package in spec['packages']:
     with source.open('rb') as stream:
         assert hashlib.file_digest(stream, 'sha256').hexdigest() == package['sha256']
     extract = ROOT / '.tools/debian-inputs' / abi
+    extract.mkdir(parents=True, exist_ok=True)
     subprocess.run(['dpkg-deb', '-x', str(source), str(extract)], check=True)
 source = inputs / 'rootfs.tar.gz'
 with source.open('rb') as stream:

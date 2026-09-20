@@ -20,7 +20,7 @@ NAS 用于当前开发协作；GitHub 开源使用上游 `kelai141/dsh-mobile-ap
 - 调试/发布签名密钥、ADB 密钥、账号授权文件、模型凭据。
 - 主机专用的 NAS 渲染脚本，以及意外生成的 `D:/` 目录。
 
-本机数据只从 Git 排除；已取消或未接入的源码则先校验归档到 `.local/source-archive/`，再移出活动工作树，防止被构建脚本误发现。原始文档备份在 `.local/repository-audit/originals/`；设备操作先读 `.local/devices-and-debugging.md`。文档中的 `192.0.2.x`、`/path/to/developer/`、`*_SERIAL` 是示例，不能当作真实配置。历史测试结论不因脱敏而变为新机验收。
+本机数据只从 Git 排除；已取消或未接入的源码则先校验归档到 `.local/source-archive/`，再移出活动工作树，防止被构建脚本误发现。维护者可将原始文档备份保存在 `.local/repository-audit/originals/`，但它不是构建前提。设备操作先读公开的 [设备规则](../android-shell/docs/AGENTS/devices-and-debugging.md)；操作者自己的 `.local/devices-and-debugging.md` 如存在，仅补充本机身份，不是新 checkout 必需文件。文档中的 `192.0.2.x`、`/path/to/developer/`、`*_SERIAL` 是示例，不能当作真实配置。历史测试结论不因脱敏而变为新机验收。
 
 ## 提交检查
 
@@ -44,7 +44,7 @@ git diff --cached --stat
 - 原机器的 `android-shell/keystore/debug.keystore` 留在磁盘且不再跟踪，继续用它覆盖已有测试安装。新 checkout 缺少该文件时采用 AGP 自己生成的本机调试签名，不能直接覆盖其他签名的安装。
 - 不把现有公开调试身份当正式发行身份。正式签名另行配置，不纳入本轮。
 - ASR 实验样本 WAV 与 debug 录音 fixture 留在本地；依赖它们的测试需先自行准备有权使用的样本。源码本身不附带用户录音。
-- `rebuild-codex-shell.py` 是增量构建入口，依赖本地快照和 `artifacts/build-arm64-codex.json`。本轮没有证明全新 checkout 能一键重建当前完整 APK；依赖链补齐是后续独立任务。
+- `rebuild-codex-shell.py` 是旧增量构建入口，依赖本地快照和 `artifacts/build-arm64-codex.json`。新 checkout 使用 [首次构建流程](FIRST-DEPLOY.md)：锁定公开输入，生成自己的工具链、快照和回执，禁止用维护者私有材料补齐。构建、安装及功能验收分别报告。
 - 模型测试 URL 使用 `DSH_TEST_MODEL_ORIGIN`（不含 `/v1`）或 `DSH_TEST_MODEL_BASE_URL`（含 `/v1`）。实际值由操作者提供。Fold 脚本接收显式 serial，并核对 `ro.product.device=lhasa`；旧硬编码显示状态/UID 的实验仍需按设备文档核验，不能因为 serial 参数化就视为通用工具。
 
 ## 许可证

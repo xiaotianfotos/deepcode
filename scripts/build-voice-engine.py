@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT/'artifacts/voice-engine'
@@ -17,16 +18,25 @@ parser.add_argument('--stage-only', action='store_true')
 args = parser.parse_args()
 ndk = Path(os.environ['ANDROID_HOME'])/'ndk/27.2.12479018'
 tool = ndk/'toolchains/llvm/prebuilt/linux-x86_64/bin'
-digest = lambda p: hashlib.file_digest(p.open('rb'), 'sha256').hexdigest()
+def digest(path):
+    with path.open('rb') as source:
+        return hashlib.file_digest(source, 'sha256').hexdigest()
 
 if not args.stage_only:
     source = ROOT/'.tools/llama.cpp'
+    compat_receipt = ROOT/'artifacts/qwen-asr-lab-v0.1.0.json'
+    compat = ROOT/'asr-lab/app/src/main/jniLibs/arm64-v8a/libasr_server.so'
+    compat_licenses = ROOT/'asr-lab/app/src/main/assets/licenses'
+    # A fresh checkout prepares the pinned public sources and native baseline;
+    # this does not require the experimental APK or any Gradle cache.
+    if not all(path.exists() for path in (source, compat_receipt, compat, compat_licenses)):
+        subprocess.run([sys.executable, str(ROOT/'scripts/build-asr-lab.py'), '--native-only'],
+                       check=True, cwd=ROOT)
     assert subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip() == REVISION
     assert not subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain'], text=True).strip()
     # Keep the known Vulkan-capable engine available without enabling Vulkan in
     # the default CPU-only build. It is independently built by build-asr-lab.py.
-    old = json.loads((ROOT/'artifacts/qwen-asr-lab-v0.1.0.json').read_text())
-    compat = ROOT/'asr-lab/app/src/main/jniLibs/arm64-v8a/libasr_server.so'
+    old = json.loads(compat_receipt.read_text())
     assert digest(compat) == old['binarySha256'], 'Rebuild the compatibility engine with build-asr-lab.py'
     assert old['sources']['llama.cpp'][1] == REVISION
     build = ROOT/'.tools/asr-kleidiai-build'
@@ -78,6 +88,7 @@ assert data['llamaRevision'] == REVISION and data['kleidiaiVersion'] == '1.24.0'
 native = ROOT/'android-shell/app/src/main/jniLibs/arm64-v8a'
 assets = ROOT/'android-shell/app/src/main/assets'
 native.mkdir(parents=True, exist_ok=True)
+(assets/'licenses').mkdir(parents=True, exist_ok=True)
 for name, meta in data['files'].items():
     assert digest(OUT/name) == meta['sha256']
     shutil.copyfile(OUT/name, native/name)

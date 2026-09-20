@@ -61,7 +61,7 @@ sdkmanager --sdk_root="$ANDROID_HOME" 'ndk;27.2.12479018'
 
 工具包安装及许可证接受方式见 [官方 sdkmanager 文档](https://developer.android.com/tools/sdkmanager)。官方也提供更新的 SDK 管理入口；本项目这里记录的是现有脚本兼容路径，并未验证迁移到新工具链。
 
-`scripts/env.sh` 会将 JAVA_HOME、ANDROID_HOME、Gradle 缓存等指向仓库 `.tools/`，不是自动安装脚本。已有系统 SDK 的开发者可让 `.tools/android-sdk` 指向已有 SDK，或自行导出相应环境变量；不要在设置好外部路径后再次 source 它，误覆盖配置。首次 Gradle 调用需要网络下载依赖，不要直接使用 `--offline`。
+`scripts/env.sh` 保留已导出的 JAVA_HOME 和 ANDROID_HOME，未设置时使用本 checkout 的 `.tools/`；Gradle 缓存也位于本 checkout。它不负责安装工具。自动准备流程见 [首次部署](FIRST-DEPLOY.md)，上面的手动安装方式适合自行管理 SDK 的开发者。独立复现时不要让 `.tools` 指向维护者的已有目录。首次 Gradle 调用需要网络下载依赖，不要直接使用 `--offline`。
 
 ### 可以独立执行的验证
 
@@ -92,9 +92,9 @@ npm test
 - 本机语音：ASR/VAD/对齐原生构建及其许可证，模型另行选装。
 - 同次构建生成的哈希、装配回执和自有签名。
 
-`rebuild-codex-shell.py` 是**已有完整构建的增量入口**，会读取 `artifacts/build-arm64-codex.json` 和旧 snapshot，不是新 checkout 的首次构建命令。不要伪造回执或复制维护者的签名来绕过检查。目前还没有把上述流程串成已验收的从零构建命令；此文档不作这一承诺。
+`rebuild-codex-shell.py` 是**已有完整构建的增量入口**，会读取 `artifacts/build-arm64-codex.json` 和旧 snapshot，不是新 checkout 的首次构建命令。不要伪造回执或复制维护者的签名来绕过检查。首次构建改用 [FIRST-DEPLOY.md](FIRST-DEPLOY.md) 的 `first-build.py`，按阶段从公开输入生成回执；这不表示用户账号、模型和设备内工具已经初始化。
 
-新 checkout 缺少私有 debug key 时由 AGP 生成自己的调试身份；它不能直接覆盖使用另一签名的已安装 DeepCode。发布签名应独立管理，不入 Git，也不通过卸载用户应用来绕过签名检查。
+Git 树不包含 keystore。若操作者已在被忽略的 `android-shell/keystore/debug.keystore` 放置自己的兼容调试密钥，Gradle 会沿用它；否则新 checkout 使用 AGP 的调试身份。不能根据维护者已有工作树的签名推断新 checkout 的签名；后者不能直接覆盖使用另一签名的已安装 DeepCode。发布签名应独立管理，不入 Git，也不通过卸载用户应用来绕过签名检查。
 
 ### 模拟器是可选项
 
