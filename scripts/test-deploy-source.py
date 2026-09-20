@@ -187,6 +187,36 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(installs, [('install', '-r', '-t', str(self.apk))])
         self.assertIn(('am', 'start', '-n', DEPLOY.PKG+'/.MainActivity'), self.device.commands)
 
+    def test_install_rejection_exposes_only_safe_code_and_never_launches(self):
+        command = self.device.command
+        def reject(*args, **kwargs):
+            if args[0] == 'install':
+                self.device.commands.append(args)
+                return subprocess.CompletedProcess(args, 1, b'',
+                    b'Failure [INSTALL_FAILED_USER_RESTRICTED: private fixture description]')
+            return command(*args, **kwargs)
+        with patch.object(self.device, 'command', side_effect=reject):
+            with self.assertRaises(DEPLOY.Blocked) as result:
+                DEPLOY.deploy(self.device, self.build, self.sdk, install=True)
+        self.assertIn('INSTALL_FAILED_USER_RESTRICTED', str(result.exception))
+        self.assertNotIn('private fixture', str(result.exception))
+        self.assertEqual(sum(c[0] == 'install' for c in self.device.commands), 1)
+        self.assertFalse(any(c[:2] == ('am', 'start') for c in self.device.commands))
+
+    def test_install_timeout_reports_unknown_completion_without_retry(self):
+        with patch.object(self.device, 'command', side_effect=subprocess.TimeoutExpired('adb', 180)) as command:
+            with self.assertRaisesRegex(DEPLOY.Blocked, 'completion is unknown'):
+                DEPLOY.install_apk(self.device, self.apk)
+            self.assertEqual(command.call_count, 1)
+
+    def test_unclassified_install_error_does_not_echo_output(self):
+        result = subprocess.CompletedProcess([], 1, b'private fixture output', b'private fixture stderr')
+        with patch.object(self.device, 'command', return_value=result):
+            with self.assertRaises(DEPLOY.Blocked) as caught:
+                DEPLOY.install_apk(self.device, self.apk)
+        self.assertIn('exited 1: unclassified', str(caught.exception))
+        self.assertNotIn('private fixture', str(caught.exception))
+
     def test_state_race_rechecked_before_install(self):
         calls = 0
 

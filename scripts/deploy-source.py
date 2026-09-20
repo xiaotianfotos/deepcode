@@ -226,6 +226,29 @@ def wait_ready(device, build, timeout):
                   'DeepCode was left running; wait for initialization and inspect it without force-stop.')
 
 
+def install_apk(device, apk):
+    try:
+        response = device.command('install', '-r', '-t', str(apk), timeout=180, check=False)
+    except subprocess.TimeoutExpired:
+        raise Blocked('ADB installation timed out; completion is unknown. Inspect the package and '
+                      'device confirmation before retrying; do not uninstall or clear data.') from None
+    output = (response.stdout + response.stderr).decode(errors='replace')
+    if response.returncode == 0 and 'Success' in response.stdout.decode(errors='replace').splitlines():
+        return
+    # Report only machine error codes, never raw ADB output or its local paths.
+    code = re.search(r'Failure\s*\[((?:INSTALL_FAILED|INSTALL_PARSE_FAILED)_[A-Z0-9_]{1,64})\b', output)
+    reason = code[1] if code else 'unclassified installation failure'
+    if code and code[1] == 'INSTALL_FAILED_USER_RESTRICTED':
+        action = 'Allow the system installation prompt or check OEM USB-install settings, then retry explicitly.'
+    elif code and code[1] in ('INSTALL_FAILED_UPDATE_INCOMPATIBLE', 'INSTALL_FAILED_VERSION_DOWNGRADE'):
+        action = 'Recheck the installed signature/version; do not uninstall, downgrade or clear data.'
+    elif code and code[1] == 'INSTALL_FAILED_INSUFFICIENT_STORAGE':
+        action = 'Check available device storage; do not delete user files automatically.'
+    else:
+        action = 'Check the target connection and installation UI before retrying; no automatic retry was made.'
+    raise Blocked(f'ADB install exited {response.returncode}: {reason}. {action}')
+
+
 def deploy(device, build, sdk, install=False, timeout=1200):
     result = preflight(device, build, sdk)
     if not install:
@@ -233,9 +256,7 @@ def deploy(device, build, sdk, install=False, timeout=1200):
     # Repeat every state check immediately before the sole installation command.
     preflight(device, build, sdk)
     require(digest(build['apk']) == build['receipt']['apk_sha256'], 'APK changed after preflight.')
-    response = device.command('install', '-r', '-t', str(build['apk']), timeout=180)
-    require('Success' in response.stdout.decode().splitlines(),
-            'Android did not confirm installation. Check the device installation prompt; do not bypass it.')
+    install_apk(device, build['apk'])
     device.shell('am', 'start', '-n', PKG+'/.MainActivity')
     wait_ready(device, build, timeout)
     return {'status': 'INSTALLED_AND_READY', **result}

@@ -73,6 +73,8 @@ python3 scripts/deploy-source.py --install --serial "$device_serial"
 
 参数 `--receipt` 默认读取 `artifacts/first-build.json`，`--timeout` 默认给安装后初始化 1200 秒。退出码 0 表示当前检查或安装步骤通过；2 表示阻塞，须读取脱敏提示，不代表已经安装成功。正常关闭 Live 功能不影响预检；旧版或整个插件被卸载导致状态 API 缺失时会保守阻塞，不能用启用录音来解决。
 
+安装失败会报告退出码及可识别的 `INSTALL_FAILED_*` / `INSTALL_PARSE_FAILED_*` 错误码，不输出完整 ADB 日志，也不自动重试。`INSTALL_FAILED_USER_RESTRICTED` 需要操作者处理系统安装确认或 OEM 的 USB 安装设置；超时表示结果未知，先检查包是否已安装及当前系统页面，再决定是否重试。
+
 该工具只在临时目录读取已装 APK 的签名用于比较，不把它当构建 donor；不会自动备份用户数据，重要数据仍应按用户自己的策略保管。安装后初始化超时会保留进程运行并报阻塞，禁止强杀解压流程。
 
 ## 4. 第一次使用与功能分级
