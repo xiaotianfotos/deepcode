@@ -35,6 +35,21 @@ class FirstBuildTests(unittest.TestCase):
                 self.assertEqual(archive.extractfile('home/data').read(),b'public fixture')
             self.assertFalse((work/'snapshot.tar').exists())
 
+    def test_clean_sources_handles_js_package_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);modules=root/'node_modules'
+            package=modules/'tesseract.js';package.mkdir(parents=True)
+            source=package/'index.js';source.write_text(str(root)+'/public/source.js')
+            external=root/'untouched.js';external.write_text(str(root)+'/private.js')
+            (package/'linked.js').symlink_to(external)
+            maps=modules/'@dsh-android/plugin/maps.map';maps.mkdir(parents=True)
+            (maps/'index.js.map').write_text('source paths')
+            with patch.object(module,'ROOT',root):module.clean_runtime_sources(modules)
+            self.assertEqual(source.read_text(),'public/source.js')
+            self.assertEqual(external.read_text(),str(root)+'/private.js')
+            self.assertTrue(maps.is_dir())
+            self.assertFalse((maps/'index.js.map').exists())
+
     def test_package_copy_omits_source_maps_and_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/'source';(source/'lib').mkdir(parents=True);(source/'node_modules').mkdir()

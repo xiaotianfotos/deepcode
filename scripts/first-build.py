@@ -114,6 +114,16 @@ def pack_runtime(runtime, target):
     temporary.unlink()
 
 
+def clean_runtime_sources(modules):
+    for file in (modules/'@dsh-android').rglob('*.map'):
+        if file.is_file() and not file.is_symlink(): file.unlink()
+    for file in modules.rglob('*.js'):
+        # npm package names may themselves end in .js (for example tesseract.js).
+        if file.is_symlink() or not file.is_file(): continue
+        content = file.read_text(errors='strict')
+        if str(ROOT) in content: file.write_text(content.replace(str(ROOT)+'/', ''))
+
+
 def assemble():
     fetch_base()
     runtime = WORK/'runtime'
@@ -139,11 +149,7 @@ def assemble():
     for source in (ANDROID/'codex-skills').iterdir():
         if source.is_dir() and source.name != 'say':
             shutil.copytree(source,skills/source.name,ignore=shutil.ignore_patterns('__pycache__'),dirs_exist_ok=True)
-    for file in (profile/'node_modules/@dsh-android').rglob('*.map'): file.unlink()
-    for file in (profile/'node_modules').rglob('*.js'):
-        if file.is_symlink(): continue
-        content = file.read_text(errors='strict')
-        if str(ROOT) in content: file.write_text(content.replace(str(ROOT)+'/', ''))
+    clean_runtime_sources(profile/'node_modules')
     pack_runtime(runtime, ASSETS/'snapshot.tar.xz')
     (ASSETS/'snapshot.sha256').write_text(digest(ASSETS/'snapshot.tar.xz')+'\n')
     for license in (ANDROID/'LICENSES').glob('*.txt'):

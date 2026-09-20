@@ -64,6 +64,12 @@ android {
       keepDebugSymbols += "**/libdsh_aligner_vulkan.so"
       keepDebugSymbols += "**/libdsh_codex.so"
       keepDebugSymbols += "**/libdsh_codex_host.so"
+      keepDebugSymbols += "**/libdsh_voice_compat.so"
+      keepDebugSymbols += "**/libdsh_codex_identity.so"
+      keepDebugSymbols += "**/libdsh_codex_launcher.so"
+      keepDebugSymbols += "**/libdsh_codex_shell.so"
+      keepDebugSymbols += "**/libdsh_vad.so"
+      keepDebugSymbols += "**/libc++_shared.so"
     }
   }
 
