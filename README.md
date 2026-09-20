@@ -25,7 +25,7 @@ Android 工程位于 `android-shell/`，功能插件位于 `android-shell/plugin
 
 当前完整 APK 增量链需要已验证的运行时快照和构建回执，**尚不支持空白机器上一条命令重建完整发行包**。各插件可按模块文档安装锁定的开发依赖、构建并运行测试；Android JVM 测试需自行配置 JDK 17 与 Android SDK。设备上的 Codex、ASR、Debian 和特权功能还依赖各自的运行环境、权限与平台支持。
 
-- [环境与构建](android-shell/docs/AGENTS/build-and-env.md) · [运行时边界](docs/RUNTIME-BOUNDARY.md)
+- [Android 构建环境（电脑与设备内）](docs/ANDROID-BUILD-ENVIRONMENT.md) · [运行时边界](docs/RUNTIME-BOUNDARY.md)
 - [共享存储](docs/STORAGE.md) · [Debian](docs/DEBIAN.md) · [Codex 后端](docs/CODEX-BACKEND-MILESTONE.md)
 - [语音服务](docs/development/SPEECH-SERVICES.md) · [工作台与手柄](docs/PS5-VOICE-DECK-DESIGN.md)
 

@@ -1,3 +1,5 @@
+- **构建环境入口**：电脑工具链与设备内 Android Java 编译环境分别见 `../docs/ANDROID-BUILD-ENVIRONMENT.md`；旧 0.13.3 命令不作当前首次构建入口，增量回执必须由真实构建生成。
+
 - **模型目录同步退役**：不再内置 `dsh-model-sync`；构建清理旧快照包/原厂挂载，启动迁移仅撤下原厂入口，保留供应商与模型数据。旧增量快照需重新 staging 和核验回执，详见 `../../docs/UPSTREAM-INTEGRATION.md`。
 
 - **公开 Fork 发布**：保留原作者公开历史与所有许可声明，只导入审核后的下游树，不导入 NAS 私有历史；新增自有代码采用根 MIT，第三方许可保留；范围见 `../../LICENSING.md`，组件见 `../../docs/THIRD-PARTY-COMPONENTS.md`。README、目录映射、凭据扫描、素材与发行渠道门禁见 `../../docs/OPEN-SOURCE-PUBLISHING.md`。

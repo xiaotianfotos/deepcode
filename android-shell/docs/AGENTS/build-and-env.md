@@ -1,12 +1,14 @@
 # build-and-env.md — 构建与验证命令 + 环境流程
 
+> 当前安装入口是根目录 [Android 构建环境](../../../docs/ANDROID-BUILD-ENVIRONMENT.md)，区分电脑构建与设备内编译。下方旧基线记录不替代当前 0.14 集成流程；当前 bridge/manage/model-capability 开发依赖以已提交的 0.1.5 锁文件为准。
+
 > grep 用法：`grep -n "门禁\|Fast\|abi" docs/AGENTS/build-and-env.md`。
 
-## Ubuntu 文件系统适配构建（2026-09-08）
+## 历史 Ubuntu 文件系统适配构建（仅旧 0.13.3）
 
 在父项目运行 `python scripts/overlay-fs-adapter.py <ABI>`，然后 `python scripts/build-baseline.py <ABI> --fs-adapter`。只向已校验发行快照注入 dsh-android-fs 及 Web composition，不重建 Node/Termux、不注入其他插件的本地编译产物。xz 解码/编码各 4 线程、两个 ABI 可并行生成快照；共享 Gradle assets 的 APK 构建必须顺序。输出标签 local-fs-adapter，与历史 local-baseline 分开。
 
-## Ubuntu 本地基线（2026-09-08）
+## 历史 Ubuntu 本地基线（仅旧 0.13.3）
 
 本地复现入口在父目录 `scripts/env.sh`、`scripts/build-baseline.py`。先复用并校验 v0.13.3 发布快照，再从源码构建壳；这不等于自行重建 Termux/Node 快照。构建记录位于父目录 `artifacts/` 与 `logs/`。
 
