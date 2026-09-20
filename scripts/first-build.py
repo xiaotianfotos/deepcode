@@ -69,7 +69,7 @@ def plugins():
 
 def inputs():
     fetch_base()
-    script('fetch-debian-inputs.py')
+    script('fetch-debian-inputs.py', '--abi', 'arm64')
     script('prepare-debian-bundle.py', 'arm64')
 
 

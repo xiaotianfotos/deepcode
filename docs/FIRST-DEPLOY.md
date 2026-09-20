@@ -47,7 +47,16 @@ python3 scripts/first-build.py
 
 已有 DeepCode 的设备必须保留用户数据、确认没有 Agent 或快照事务运行，并且应用不持有双屏租约。新 checkout 的调试签名通常不同于维护者旧包；若签名不兼容，停止覆盖安装，报告需由用户选择具备相同签名的正式更新或另行准备空白测试设备。**不得卸载、清数据、复制维护者密钥或降级。**
 
-构建成功不代表部署成功。仅在预检全部通过后才执行明确 serial 的安装。引擎就绪后核对版本、snapshot 指纹、插件实际落地，不能只看到启动页就算通过。安全预检/部署入口参照 `scripts/deploy-source.py --help`（存在时）；不得用旧 `install-device.py` 的默认 baseline 覆盖新包。
+构建成功不代表部署成功。仅在预检全部通过后才执行明确 serial 的安装。引擎就绪后核对版本、snapshot 指纹、插件实际落地，不能只看到启动页就算通过。预检与安装命令如下；默认仅检查，安装必须显式指定 `--install`。已有应用需打开到可读状态的前台 WebView，语音/Live/双屏退出到空闲，且引擎能认证。任何未知状态失败关闭，不自动停止任务或切换插件。不要用旧 `install-device.py` 的默认 baseline 覆盖新包。
+
+```bash
+read -r -p "目标设备完整 ADB serial: " device_serial
+python3 scripts/deploy-source.py --check --serial "$device_serial"
+# 只有上一命令通过，且用户已授权更新此设备，才运行：
+python3 scripts/deploy-source.py --install --serial "$device_serial"
+```
+
+该工具只在临时目录读取已装 APK 的签名用于比较，不把它当构建 donor；不会自动备份用户数据，重要数据仍应按用户自己的策略保管。安装后初始化超时会保留进程运行并报阻塞，禁止强杀解压流程。
 
 ## 4. 第一次使用与功能分级
 

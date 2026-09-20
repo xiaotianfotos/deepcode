@@ -1,5 +1,7 @@
 # build-and-env.md — 构建与验证命令 + 环境流程
 
+> 首次完整 ARM64 装配入口为 [FIRST-DEPLOY.md](../../../docs/FIRST-DEPLOY.md) 的 bootstrap / first-build；从公开输入生成回执，不需已有 APK。原生 ASR 可用 `build-asr-lab.py --native-only`，生产 voice 构建会按需准备兼容引擎，不再要求预先构建实验 APK。
+
 > 当前安装入口是根目录 [Android 构建环境](../../../docs/ANDROID-BUILD-ENVIRONMENT.md)，区分电脑构建与设备内编译。下方旧基线记录不替代当前 0.14 集成流程；当前 bridge/manage/model-capability 开发依赖以已提交的 0.1.5 锁文件为准。
 
 > grep 用法：`grep -n "门禁\|Fast\|abi" docs/AGENTS/build-and-env.md`。

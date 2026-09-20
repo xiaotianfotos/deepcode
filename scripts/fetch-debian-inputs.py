@@ -4,6 +4,7 @@
 --resolve deliberately refreshes the lock; ordinary invocation only consumes it.
 Downloads are disposable; docs/debian-inputs.lock.json is the rebuild recipe.
 """
+import argparse
 import gzip
 import hashlib
 import json
@@ -11,6 +12,10 @@ import pathlib
 import sys
 import urllib.request
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--abi', choices=['arm64', 'x86_64'])
+parser.add_argument('--resolve', action='store_true')
+args = parser.parse_args()
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEST = ROOT / 'downloads/debian'
 LOCK = ROOT / 'docs/debian-inputs.lock.json'
@@ -25,7 +30,7 @@ token = json.load(get('https://auth.docker.io/token?service=registry.docker.io&s
 auth = {'Authorization': 'Bearer ' + token,
         'Accept': 'application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json'}
 
-if '--resolve' in sys.argv:
+if args.resolve:
     raw = get(REGISTRY + 'manifests/bookworm-slim', auth).read()
     index = json.loads(raw)
     lock = {'schema': 1, 'distribution': 'debian:bookworm-slim',
@@ -54,6 +59,8 @@ else:
     lock = json.loads(LOCK.read_text())
 
 for abi, config in lock['architectures'].items():
+    if args.abi and abi != args.abi:
+        continue
     folder = DEST / abi
     folder.mkdir(exist_ok=True)
     for item in [dict(config['rootfs'], filename='rootfs.tar.gz'), *config['packages']]:
