@@ -1,0 +1,102 @@
+{
+  "name": "relay-dsh-plugin-session-import",
+  "version": "0.2.3-rc.1",
+  "description": "Provider-neutral session import hub for DeepSeek Harness plugins.",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "session-import"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/host-plugin.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangbobo2021/relay-dsh-plugin-session-import.git"
+  },
+  "homepage": "https://github.com/yangbobo2021/relay-dsh-plugin-session-import#readme",
+  "bugs": {
+    "url": "https://github.com/yangbobo2021/relay-dsh-plugin-session-import/issues"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "scripts": {
+    "prepare:dsh": "bash scripts/link-dsh-development-peers.sh",
+    "prebuild": "npm run prepare:dsh && node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "tsdown --config tsdown.config.ts",
+    "postbuild": "node normalize-build.mjs",
+    "pretypecheck": "npm run prepare:dsh",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "npm run prepare:dsh && vitest run test/*.spec.ts test/*.spec.tsx && node --test test/*.test.mjs",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "exports": {
+    ".": "./lib/host-plugin.js",
+    "./client": "./lib/client.js",
+    "./contracts": {
+      "types": "./lib/contracts.d.ts",
+      "default": "./lib/contracts.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "README.zh.md",
+    "SPEC.md",
+    "docs/spec",
+    "docs/images",
+    "cordis.patch.yml",
+    "lib/client.js",
+    "lib/client.js.map",
+    "lib/contracts.js",
+    "lib/contracts.js.map",
+    "lib/contracts.d.ts",
+    "lib/host-plugin.js",
+    "lib/host-plugin.js.map",
+    "docs/dsh-0.1.2-alpha.3.md"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.7",
+    "jsdom": "^29.1.1",
+    "lightningcss": "1.32.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.3.1",
+    "tsdown": "0.22.2",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

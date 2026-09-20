@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "distribution": "debian:bookworm-slim",
+  "index_sha256": "88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+  "architectures": {
+    "x86_64": {
+      "manifest": "sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867",
+      "rootfs": {
+        "url": "https://registry-1.docker.io/v2/library/debian/blobs/sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+        "sha256": "a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+        "bytes": 28232655
+      },
+      "packages": [
+        {
+          "package": "libandroid-shmem",
+          "version": "0.7",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_x86_64.deb",
+          "sha256": "ffa9e4c87467b158b148d0ff92dda796aa038276c2075af3269cdcdb06f25797"
+        },
+        {
+          "package": "libtalloc",
+          "version": "2.4.3",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtalloc/libtalloc_2.4.3_x86_64.deb",
+          "sha256": "7ca2eaae2e53b28228a01301bc410b62845403d6317c25b8e0a7f40681de0628"
+        },
+        {
+          "package": "proot",
+          "version": "5.1.107.92",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107.92_x86_64.deb",
+          "sha256": "70236632826c30ec0245082b633bbc7ef1e9fa5531bd51bd4f20231bfcdc999b"
+        }
+      ]
+    },
+    "arm64": {
+      "manifest": "sha256:6bd27d44e6c32a66bbd72d7cb2b76a8ae3497ec2e5274a81abd1b37f6013fa1f",
+      "rootfs": {
+        "url": "https://registry-1.docker.io/v2/library/debian/blobs/sha256:75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a",
+        "sha256": "75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a",
+        "bytes": 28117289
+      },
+      "packages": [
+        {
+          "package": "libandroid-shmem",
+          "version": "0.7",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb",
+          "sha256": "0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6"
+        },
+        {
+          "package": "libtalloc",
+          "version": "2.4.3",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtalloc/libtalloc_2.4.3_aarch64.deb",
+          "sha256": "ac81ad623d74c209718b9f3acb2dd702cc8a88c431e820d212229910b4db29da"
+        },
+        {
+          "package": "proot",
+          "version": "5.1.107.92",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107.92_aarch64.deb",
+          "sha256": "1f1c983509701f6826f568482c70673ee453a9ba38c9f5fa445a472d6b7524e9"
+        }
+      ]
+    }
+  }
+}

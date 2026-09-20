@@ -1,0 +1,24 @@
+{
+  "name": "relay-dsh-plugin-session-import",
+  "version": "0.2.3-rc.1",
+  "dist": {
+    "shasum": "247c56236c66dff9a4d8a3beaa197e97662e3cfd",
+    "tarball": "https://registry.npmjs.org/relay-dsh-plugin-session-import/-/relay-dsh-plugin-session-import-0.2.3-rc.1.tgz",
+    "fileCount": 17,
+    "integrity": "sha512-IPgHFPo2BGF5cmgKwk/PIqQrPXzREvEvQT9xukhQBDs2rb1dgHOO3mRrc7YZOh/gWtMIlR3Z9ltWqjY1jHoyXQ==",
+    "signatures": [
+      {
+        "sig": "MEUCIFnAecvI9uKI8vGVEDxS3EG3X8OE5Oiburd52MAH0kFSAiEAh9KH1tdHGXnpdDH8Dj/umGRU3RkFsrKsMFMedFyF1TI=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/relay-dsh-plugin-session-import@0.2.3-rc.1",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 92868
+  },
+  "sha256": "f8948054c726f28032f9fe56be975b655448c9bf3680d3723b5a20ea33b7a33b"
+}

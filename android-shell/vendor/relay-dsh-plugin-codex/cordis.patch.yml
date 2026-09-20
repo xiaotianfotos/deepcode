@@ -1,0 +1,5 @@
+- insert:
+    - id: relay-session-import-for-codex
+      name: 'relay-dsh-plugin-session-import'
+    - id: relay-codex-host
+      name: 'relay-dsh-plugin-codex'

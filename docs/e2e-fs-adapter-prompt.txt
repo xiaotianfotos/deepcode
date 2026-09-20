@@ -1,0 +1,1 @@
+运行时已升级，现在验证标准文件工具。严格只使用 write、read、edit 工具，不得使用 Bash、Python、终端或其他方式代替。先用 write 新建 android-e2e/adapter-created.json，内容为 {"sum":42,"verified":true,"message":"标准 write 安卓适配通过"}；用 read 读回；用 edit 将 sum 改为43；再用 read 核对。不要修改其他文件。任何工具失败就明确报告并停止，不要绕过。全部成功后回复 ANDROID_STANDARD_WRITE_OK sum=43。

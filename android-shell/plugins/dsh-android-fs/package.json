@@ -1,0 +1,40 @@
+{
+  "name": "@dsh-android/dsh-android-fs",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "description": "Android atomic no-replace publication adapter preserving the Harness filesystem sandbox",
+  "scripts": {
+    "build": "tsc -p . && node build-helper.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-fs": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-fs-sandbox": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox": "0.1.5-rc.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-fs": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-fs-sandbox": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox": "0.1.5-rc.1",
+    "@types/node": "24.3.0",
+    "typescript": "5.9.2"
+  }
+}

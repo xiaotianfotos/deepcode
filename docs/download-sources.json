@@ -1,0 +1,73 @@
+[
+  {
+    "name": "dsh-mobile-apk-v0.13.3-arm64.apk",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/dsh-mobile-apk-v0.13.3-arm64.apk",
+    "size": 165856542,
+    "digest": "sha256:3478604b8ce316b11d85049d454c46c2e795b60ce840cfb1dbbd602c79bb078a"
+  },
+  {
+    "name": "dsh-mobile-apk-v0.13.3-x86_64.apk",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/dsh-mobile-apk-v0.13.3-x86_64.apk",
+    "size": 162810774,
+    "digest": "sha256:7e7dc7f74bc6a1fd75431413c2a389ddd369b179eed476713159787c366d09d9"
+  },
+  {
+    "name": "MANIFEST.txt",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/MANIFEST.txt",
+    "size": 1421,
+    "digest": "sha256:ad7b82ef4b3a9d33080013bed9c6153df7ed0ef7ff7010b3eeaeed7374bd02c3"
+  },
+  {
+    "name": "snapshot-arm64.tar.xz",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/snapshot-arm64.tar.xz",
+    "size": 161660104,
+    "digest": "sha256:cb27e9c115f692f98847fe2b8fc8949400f240addafc63f13db9ff7527c9a1f4"
+  },
+  {
+    "name": "snapshot-arm64.tar.xz.sha256",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/snapshot-arm64.tar.xz.sha256",
+    "size": 64,
+    "digest": "sha256:4da4684e6c7465315a9e8d77da536c0aaeec64b8c691b2a80b83dd818c799c5d"
+  },
+  {
+    "name": "snapshot-x86_64.tar.xz",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/snapshot-x86_64.tar.xz",
+    "size": 158614336,
+    "digest": "sha256:773eb63126f463db33864f299fedf962b39ed6343b3c39919da8e933907e1fab"
+  },
+  {
+    "name": "snapshot-x86_64.tar.xz.sha256",
+    "url": "https://github.com/kelai141/dsh-mobile-apk/releases/download/v0.13.3/snapshot-x86_64.tar.xz.sha256",
+    "size": 64,
+    "digest": "sha256:2d0347150ff626132226fc11e8e4f93699d47d8ebd1460a1dcdb18f2c5b8e89a"
+  },
+  {
+    "name": "OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz",
+    "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz",
+    "digest": "sha256:3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e"
+  },
+  {
+    "name": "commandlinetools-linux-11076708_latest.zip",
+    "url": "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip",
+    "size": 153607504,
+    "digest": "sha1:d313adb7aedccf6cf0cfca51ec180f0059f5f8f8"
+  },
+  {
+    "name": "base-dsh.tar.xz",
+    "url": "https://media.githubusercontent.com/media/kelai141/dsh-mobile-apk/v0.13.3/base/base-dsh.tar.xz",
+    "size": 45830328,
+    "digest": "sha256:e6f2386f91d33e1c8003211027adcf49640a31c2bf481ee8497003fda3d0fa2b"
+  },
+  {
+    "name": "base-usr-arm64.tar.xz",
+    "url": "https://media.githubusercontent.com/media/kelai141/dsh-mobile-apk/v0.13.3/base/base-usr-arm64.tar.xz",
+    "size": 68959460,
+    "digest": "sha256:cc82f5b723c73d481728d29efc9203371757644a08805fb0a2705872571289e5"
+  },
+  {
+    "name": "base-usr-x86_64.tar.xz",
+    "url": "https://media.githubusercontent.com/media/kelai141/dsh-mobile-apk/v0.13.3/base/base-usr-x86_64.tar.xz",
+    "size": 80933336,
+    "digest": "sha256:9ad3225c1b4468c138afeb7e38c61c31a918797becfe7d1de29e49012d54541a"
+  }
+]

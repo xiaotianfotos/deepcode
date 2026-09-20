@@ -1,0 +1,1 @@
+请只用 debian_exec 在当前 Debian 中安装工具，background=true、timeoutMs=900000，命令为 apt-get update && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg python3 python3-venv python3-dev build-essential nodejs npm。启动成功后不要等待完成，不要修改命令或改用 bash；最后只回复 DEBIAN_TEST_OK。任务启动若失败则报告错误。

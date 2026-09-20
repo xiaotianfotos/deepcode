@@ -1,0 +1,18 @@
+{
+  "name": "@mmmbuto/codex-cli-termux",
+  "version": "0.153.3",
+  "dist": {
+    "shasum": "f355544253bf785bbbccb7814692ae3a3c542de4",
+    "tarball": "https://registry.npmjs.org/@mmmbuto/codex-cli-termux/-/codex-cli-termux-0.153.3.tgz",
+    "fileCount": 12,
+    "integrity": "sha512-CyJie0OjwwkO/nKIXI2lRx1RyiDNAZ/TajimiCau8UWKZnC6Doy9GnT5E+cYNB/rwc79uuHWeA6C3yI1SJAcOA==",
+    "signatures": [
+      {
+        "sig": "MEYCIQDgfUvzy3JvgwK0ovfvK3jrIR+FlWU3ijg1DEvaZOl37gIhAJ+cXenAkM3VEal+A2illpqMNL1ajeXim2YBHZEedRta",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "unpackedSize": 282940468
+  },
+  "sha256": "6b2fc9b75b50b57855717e7cfd520dcfda7efdade061d775b96f0a6b31fdbe99"
+}

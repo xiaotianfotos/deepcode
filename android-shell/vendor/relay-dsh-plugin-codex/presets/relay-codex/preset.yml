@@ -1,0 +1,3 @@
+name: Codex
+description: Run and resume a Codex thread in DSH. 在 DSH 中运行并继续 Codex thread。
+order: 2

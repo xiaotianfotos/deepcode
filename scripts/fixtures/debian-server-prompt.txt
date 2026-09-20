@@ -1,0 +1,1 @@
+请只调用 debian_exec 一次，background=true、timeoutMs=600000，command 为 python3 -m http.server 9088 --bind 127.0.0.1 --directory /workspace。启动成功后只回复 DEBIAN_TEST_OK；不要等待服务结束，也不要主动取消。

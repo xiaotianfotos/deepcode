@@ -1,0 +1,133 @@
+{
+  "name": "relay-dsh-plugin-codex",
+  "version": "0.2.3-rc.1",
+  "description": "Codex conversation backend for DeepSeek Harness, powered by the Codex App Server with approvals and DSH tool support.",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/host-plugin.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangbobo2021/relay-dsh-plugin-codex.git"
+  },
+  "homepage": "https://github.com/yangbobo2021/relay-dsh-plugin-codex#readme",
+  "bugs": {
+    "url": "https://github.com/yangbobo2021/relay-dsh-plugin-codex/issues"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "scripts": {
+    "prepare:dsh": "bash scripts/link-dsh-development-peers.sh",
+    "prebuild": "npm run prepare:dsh && node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "tsdown --config tsdown.config.ts",
+    "postbuild": "node normalize-build.mjs",
+    "pretypecheck": "npm run prepare:dsh",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:unit": "node --test test/*.test.mjs",
+    "test:component": "vitest run test/*.spec.tsx",
+    "test": "npm run prepare:dsh && npm run test:unit && npm run test:component",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "exports": {
+    ".": "./lib/host-plugin.js",
+    "./client": "./lib/client.js",
+    "./typert": "./lib/typert.host.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.zh.md",
+    "docs/images",
+    "docs/reliability-spec.md",
+    "docs/reliability-acceptance.md",
+    "docs/spec/dsh-interaction-bridge.md",
+    "docs/spec/execution-presentation.md",
+    "scripts/repair-activity-history.mjs",
+    "codex-activity-wire.mjs",
+    "cordis.patch.yml",
+    "presets",
+    "lib/client.js",
+    "lib/client.js.map",
+    "lib/host-plugin.js",
+    "lib/host-plugin.js.map",
+    "lib/typert.host.js",
+    "lib/typert.host.js.map",
+    "docs/dsh-0.1.2-alpha.3.md",
+    "dsh-compat.mjs",
+    "dsh-client-compat.mjs",
+    "dsh-client-compat.d.mts"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-tool",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "relay-dsh-plugin-session-import",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-model-selection"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.1.1-rc.2 <0.1.2-0 || >=0.1.2-alpha.2 <0.1.3-0",
+    "@deepseek-ai/dsh-session": ">=0.1.1-rc.2 <0.1.2-0 || >=0.1.2-alpha.2 <0.1.3-0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.1-rc.2 <0.1.2-0 || >=0.1.2-alpha.2 <0.1.3-0",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@openai/codex": "0.149.0",
+    "lucide-react": "^1.37.0",
+    "relay-dsh-plugin-session-import": "0.2.3-rc.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.7",
+    "jsdom": "^29.1.1",
+    "lightningcss": "1.32.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.3.1",
+    "tsdown": "0.22.2",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.8",
+    "relay-dsh-plugin-session-import": "github:yangbobo2021/relay-dsh-plugin-session-import#1b789b387e334f65ba364b1ed5fb91c861c5d045"
+  }
+}

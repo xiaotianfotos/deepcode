@@ -1,0 +1,3 @@
+# Codex owns the model context, tools, sandbox, and approvals. Relay's host
+# adapter binds this otherwise-empty DSH presentation Session to App Server.
+[]

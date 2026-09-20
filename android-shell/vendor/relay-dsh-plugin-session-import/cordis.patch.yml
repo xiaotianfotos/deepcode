@@ -1,0 +1,3 @@
+- insert:
+    - id: relay-session-import-host
+      name: 'relay-dsh-plugin-session-import'

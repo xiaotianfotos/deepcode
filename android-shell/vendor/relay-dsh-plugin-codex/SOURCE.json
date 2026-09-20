@@ -1,0 +1,24 @@
+{
+  "name": "relay-dsh-plugin-codex",
+  "version": "0.2.3-rc.1",
+  "dist": {
+    "shasum": "41eb74dd9d07a7e2c8c3bf88a797de1145894260",
+    "tarball": "https://registry.npmjs.org/relay-dsh-plugin-codex/-/relay-dsh-plugin-codex-0.2.3-rc.1.tgz",
+    "fileCount": 25,
+    "integrity": "sha512-TDeZCtLJam6i9cPH341dXDMqWeK4pEMZyboOWho20QmfvQntXQNypy+VpSdZRNsxvmsXNaIh36zGTTDgdB/20Q==",
+    "signatures": [
+      {
+        "sig": "MEQCIDTThS4rfP6x3YUVULhpFyxWSG72vUxcBxJt6VBRIk85AiBv/Gmb+MDb6wGVPkfJl3p4a9itI/JyA5FOQcWKZ9O66w==",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/relay-dsh-plugin-codex@0.2.3-rc.1",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 3215164
+  },
+  "sha256": "c008e96a448257e8b71be23bf9ca62023eeeb23917aa9817c8ac031fcfa85625"
+}

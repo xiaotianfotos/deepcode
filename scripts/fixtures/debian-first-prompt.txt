@@ -1,0 +1,1 @@
+请只使用 debian_status、debian_install 和 debian_exec 完成验收，不使用 bash 替代，也不绕过错误。先查看状态，再 debian_install(background=false) 安装环境；随后 debian_exec 执行 cat /etc/os-release; pwd; printf "DEBIAN_LOCAL_OK\n" > /workspace/debian-first.txt; cat /workspace/debian-first.txt。只在安装与命令均成功时回复 DEBIAN_TEST_OK，否则报告具体错误并停止。
