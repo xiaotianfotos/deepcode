@@ -64,7 +64,9 @@ offline 时先重新发现，必要时只断开目标旧端点；不要全局 `a
 
 ## APK 构建与安全更新
 
-构建入口和所需输入见 [构建环境](../../../docs/ANDROID-BUILD-ENVIRONMENT.md)、[上游集成](../../../docs/UPSTREAM-INTEGRATION.md)。`scripts/rebuild-codex-shell.py` 是依赖受验证快照与回执的 ARM64 增量入口，不是新 checkout 的完整初始化方法。已有产物可由 `artifacts/build-arm64-codex.json` 定位；校验其中实际 APK 路径、SHA 和 snapshot SHA，不将旧文件名视为当前发行版本。
+当前 ARM64 首次构建与部署见 [FIRST-DEPLOY.md](../../../docs/FIRST-DEPLOY.md)，工具链和来源分别见 [构建环境](../../../docs/ANDROID-BUILD-ENVIRONMENT.md)、[上游集成](../../../docs/UPSTREAM-INTEGRATION.md)。`scripts/first-build.py` 从公开固定输入生成 APK 和 `artifacts/first-build.json`；用其中的实际 APK 路径、APK SHA、snapshot SHA 与原生文件 SHA 校验产物。`scripts/rebuild-codex-shell.py` 和 `artifacts/build-arm64-codex.json` 仅供持有匹配快照与回执的旧增量链维护。
+
+从仓库根运行 `python3 scripts/deploy-source.py --check --serial "$dsh_serial"`，其中 `dsh_serial` 必须事先设为已核对的目标完整 serial。默认只检查；全部预检通过且已获目标设备更新授权后，显式使用 `--install`。部署器不自动释放租约或终止任务；已有应用状态不可读时停止，先由用户退出忙碌功能。适用范围和超时行为见首次部署文档。
 
 升级前先检查候选 APK 的包名、版本、ABI 和签名证书，与目标已安装应用比较。源代码不提供维护者签名密钥；本机缺少 `android-shell/keystore/debug.keystore` 时 debug 构建使用 AGP 的本机 debug key。来自另一密钥的同包名 APK 通常不能覆盖安装，`-r`/`-t` 不解决签名不匹配。无法取得同签名构建时停止原地更新；不得自动卸载或清数据。独立包名方案也需要检查快照和运行时硬编码路径，不能只改 applicationId 即声称可用。
 

@@ -1,22 +1,21 @@
 # KleidiAI 正式语音引擎接入
 
-2026-09-12。用户在两机独立实验后授权接入正式代码。本次保持 Qwen3-ASR-0.6B Q8_0 模型、4线程、VAD/波形、输入归属和GPU字词对齐算法，修改原生引擎构建与选择。
+本地语音使用优化 CPU 引擎与兼容引擎两条路径；保持模型接口、VAD/波形、输入归属和 GPU 字词对齐的边界。模型独立配置，不随 APK 分发。
 
 ## 构建与运行
 
 - `scripts/build-voice-engine.py` 构建固定 llama.cpp `df750f76bb6126566621803b69ddaeb993be5b08` + KleidiAI v1.24.0，CPU-only、运行时指令检测，不强制SME、不修改上游。复用NDK27.2.12479018/API29，检查16KiB ELF段对齐。
 - 默认 `libdsh_voice_server.so` 为优化引擎；兼容引擎 `libdsh_voice_compat.so` 来自固定的原 ASR lab 构建与SHA收据，支持原CPU路径。两者均安装到APK nativeLibraryDir，不从可写目录执行。
-- `artifacts/voice-engine.json` 记录两个ELF和许可证SHA；`rebuild-codex-shell.py` 每次从收据验证并暂存，打包后逐项校验。`build-baseline.py` 同步使用此入口，避免后续完整构建覆盖成旧引擎。`build-asr-lab.py` 显式关闭KleidiAI，继续产出独立兼容基线。
+- `artifacts/voice-engine.json` 记录两个 ELF 和许可证 SHA，当前 `first-build.py` 装配并验证这些原生输入。`rebuild-codex-shell.py` / `build-baseline.py` 保留同一语音校验入口，仅用于匹配旧快照与回执的维护链。`build-asr-lab.py --native-only` 显式关闭 KleidiAI，生成兼容基线回执而不构建实验 APK。
 - KleidiAI Apache-2.0、BSD-3-Clause许可证与源代码版权行随APK保留。产物只携带组件及来源信息，不含Ubuntu构建路径；本地构建收据保留完整命令。
 
 ```bash
 source scripts/env.sh
-# 初次准备兼容基线时运行 scripts/build-asr-lab.py；已有匹配收据可复用。
+# 单独准备原生语音；输入缺失时自动调用 build-asr-lab.py --native-only。
 python3 scripts/build-voice-engine.py
-python3 scripts/rebuild-codex-shell.py
 ```
 
-正式构建收据仍为 `artifacts/build-arm64-codex.json`。本次没有替换snapshot，不重置账号、会话、Debian或模型。升级前APK备份在 `artifacts/voice-engine/rollback/pre-kleidiai.apk`，其收据同目录；无需卸载即可覆盖回退，必须遵守无运行任务、无快照事务、释放双屏租约的规则。
+单独原生构建不生成完整 DeepCode APK。完整装配运行 `python3 scripts/first-build.py`，产物由 `artifacts/first-build.json` 定位；安全部署使用 `scripts/deploy-source.py --check --serial <完整serial>`，详见 [首次构建与部署](FIRST-DEPLOY.md)。旧增量链的 `artifacts/build-arm64-codex.json` 及历史回退包不是首次构建输入。任何更新均需核对签名并保留用户数据，不自动降级或卸载。
 
 ## 麦克风插件
 

@@ -2,7 +2,7 @@
 
 > 首次完整 ARM64 装配入口为 [FIRST-DEPLOY.md](../../../docs/FIRST-DEPLOY.md) 的 bootstrap / first-build；从公开输入生成回执，不需已有 APK。原生 ASR 可用 `build-asr-lab.py --native-only`，生产 voice 构建会按需准备兼容引擎，不再要求预先构建实验 APK。
 
-> 当前安装入口是根目录 [Android 构建环境](../../../docs/ANDROID-BUILD-ENVIRONMENT.md)，区分电脑构建与设备内编译。下方旧基线记录不替代当前 0.14 集成流程；当前 bridge/manage/model-capability 开发依赖以已提交的 0.1.5 锁文件为准。
+> 工具链说明见根目录 [Android 构建环境](../../../docs/ANDROID-BUILD-ENVIRONMENT.md)，区分电脑构建与设备内编译。安装使用 FIRST-DEPLOY 中的 `deploy-source.py --check/--install --serial`，不得从下方旧设备命令推断授权或签名兼容。下方旧基线记录不替代当前 0.14 集成流程；当前 bridge/manage/model-capability 开发依赖以已提交的 0.1.5 锁文件为准。
 
 > grep 用法：`grep -n "门禁\|Fast\|abi" docs/AGENTS/build-and-env.md`。
 
@@ -18,11 +18,9 @@
 
 bridge 的 `session/event` 监听在干净安装时缺少事件声明，导致 TS2345。添加与其现有开发依赖配套的 `@deepseek-ai/dsh-session@0.1.1-rc.2` devDependency，并通过 type-only import 加载声明合并；不增加运行时 import，不修改事件处理逻辑。此次构建基线仍使用发布快照里的插件，重新构建的插件未注入基线 APK。
 
-# AGENTS.md — dsh-mobile-apk 开发地图
+## 历史开发地图（0.13.x）
 
-> **AI 主动更新条款（必须最先执行）**：本文件面向人类与 AI 开发助手，是唯一权威的仓库开发地图。**任何代码变更导致本文件描述失真（文件作用、函数签名、桥协议、构建命令、关键实现落点）时，AI 必须在本轮同步更新本文件，并在文末「更新记录表」登记（时间 + 版本号）。** 变更未触及本文件描述范围时无需更新（避免无意义改写）。若发现本文件与源码不一致，以源码为准并当场修正本文件——不要忽略。
->
-> **过期风险声明**：代码演进可能快于文档更新，本文件内容可能过时；一切以源码为准。
+以下是旧协调仓与壳子仓布局下的维护参考，包含旧版本、命令、路径和验证记录，不是当前首次构建要求。当前开发导航以 [Android 索引](../../AGENTS.md) 为准，依赖以 [依赖登记](DEPENDENCIES.md) 及 Gradle/锁文件为准，首次装配与安全部署见 [FIRST-DEPLOY.md](../../../docs/FIRST-DEPLOY.md)。不要求取得旧协调仓、私有记录、共享签名或历史回执。具体桥方法与权限检查以当前源码为准；修改其契约时同步相关接口说明，不新增一次性更新流水账。
 
 ---
 
@@ -154,6 +152,8 @@ voice-debug overlay 额外装配 dsh-client-input-gamepad 与 dsh-client-ui-voic
 `source scripts/env.sh && python3 scripts/rebuild-codex-shell.py` 会先构建响应式插件，将 lib/client.js 打入 assets/patched/responsive-client.js，再构建 ARM64 壳；收据记录 responsive_client_patch_sha256 并抽验 APK 内资产一致。引擎启动前只对固定包名、版本 0.1.13、基线 SHA 99b6daf… 或 runtime-patches 中记录的上次受管 SHA 原子更新。不覆盖未知内容或新版本；snapshot 指纹不变，无需重解压。升级后同时验证实际运行文件和页面逻辑，不能仅查 APK 资产。
 
 
-## 2026-09-12 正式CPU语音引擎
+## 历史 CPU 语音增量链（2026-09-12）
 
-Ubuntu从仓库根`source scripts/env.sh`，先`python3 scripts/build-voice-engine.py`，再`python3 scripts/rebuild-codex-shell.py`。前者校验固定llama.cpp/KleidiAI、构建优化CPU和复用已验证兼容基线，产出artifacts/voice-engine.json；后者stage-only逐个核对ELF和许可证SHA并写入APK收据。初次缺兼容基线应运行scripts/build-asr-lab.py；该lab明确关闭KleidiAI，不能拿lab APK覆盖当前DeepCode。完整build-baseline.py也已接入正式语音入口。两个ELF均在APK nativeLibraryDir，保持16KiB段对齐和现有snapshot。
+当前完整装配与原生输入见 [语音引擎维护说明](../../../docs/VOICE-KLEIDIAI-PRODUCTION.md)；以下 rebuild 链要求匹配的旧快照与回执。
+
+Ubuntu从仓库根`source scripts/env.sh`，先`python3 scripts/build-voice-engine.py`，再`python3 scripts/rebuild-codex-shell.py`。前者校验固定llama.cpp/KleidiAI、构建优化CPU和复用已验证兼容基线，产出artifacts/voice-engine.json；后者stage-only逐个核对ELF和许可证SHA并写入APK收据。缺兼容基线时可运行 `scripts/build-asr-lab.py --native-only`；该lab明确关闭KleidiAI，不能拿lab APK覆盖当前DeepCode。完整build-baseline.py也已接入正式语音入口。两个ELF均在APK nativeLibraryDir，保持16KiB段对齐和现有snapshot。
