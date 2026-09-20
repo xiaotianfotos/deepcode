@@ -1,0 +1,17 @@
+/** Real message-area touch dispatch, preserving drafts and lane bindings. */
+import {connect} from './lib/android-cdp.mjs'
+import {writeFileSync} from 'node:fs'
+import assert from 'node:assert/strict'
+const [serial,folder]=process.argv.slice(2),c=await connect(serial),pause=ms=>new Promise(r=>setTimeout(r,ms)),results=[]
+const state=()=>c.evaluate(`(()=>{const g=document.querySelector('.dsh-deck-grid');return {left:g.scrollLeft,active:JSON.parse(localStorage.getItem('dsh.voice-deck.controller.v2')).active,drafts:[...document.querySelectorAll('[data-deck-lane]')].map(e=>e.querySelector('[data-composer-input]').innerText),focus:document.activeElement?.closest('[data-deck-lane]')?.dataset.deckLane}})()`)
+const swipe=async(x,y,dx,dy)=>{await c.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});for(let n=1;n<=15;n++){await c.call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*n/15,y:y+dy*n/15}]});await pause(20)}await c.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await pause(850)}
+let initial
+try{
+ assert(!await c.evaluate(`['recording','preparing','transcribing','permission'].includes(JSON.parse(androidBridge.voiceStatus()).phase)`))
+ initial=await state();await c.evaluate(`document.querySelector('[data-deck-lane] header strong').click();document.querySelector('.dsh-deck-grid').scrollLeft=0`);await pause(350)
+ let p=await c.evaluate(`(()=>{const g=document.querySelector('.dsh-deck-grid').getBoundingClientRect(),x=g.right-80,y=g.y+230,h=document.elementFromPoint(x,y);return {x,y,dx:-Math.min(750,g.width-120),inChat:!!h?.closest('.dsh-deck-chat'),hit:h?.className}})()`);assert(p.inChat);await swipe(p.x,p.y,p.dx,0);let after=await state();assert(after.left>100);assert(after.active>0);results.push({test:'Drag starts on real chat message area and moves lanes right',start:p,after,passed:true})
+ p=await c.evaluate(`(()=>{const g=document.querySelector('.dsh-deck-grid').getBoundingClientRect(),x=g.x+80,y=g.y+230;return {x,y,dx:Math.min(750,g.width-120),inChat:!!document.elementFromPoint(x,y)?.closest('.dsh-deck-chat')}})()`);assert(p.inChat);await swipe(p.x,p.y,p.dx,0);after=await state();assert(after.left<200);results.push({test:'Chat gesture moves lanes back left',passed:true,left:after.left})
+ const v=await c.evaluate(`(()=>{const e=[...document.querySelectorAll('.dsh-deck-chat')].find(e=>e.scrollHeight-e.clientHeight>400&&e.getBoundingClientRect().x>=0);if(!e)throw Error('Need genuine long conversation');e.scrollTop=Math.min(400,e.scrollHeight-e.clientHeight-220);const r=e.getBoundingClientRect();return {id:e.closest('[data-deck-lane]').dataset.deckLane,top:e.scrollTop,x:r.x+r.width/2,y:r.bottom-70}})()`),before=await state();await swipe(v.x,v.y,0,-170)
+ const top=await c.evaluate(`document.querySelector('[data-deck-lane="${v.id}"] .dsh-deck-chat').scrollTop`);assert(top>v.top+50);after=await state();assert.equal(after.active,before.active);assert(Math.abs(after.left-before.left)<3);assert.deepEqual(after.drafts,initial.drafts);results.push({test:'Vertical message scroll changes history offset without changing lane or drafts',before:v.top,after:top,passed:true})
+ console.log(JSON.stringify(results,null,2))
+}finally{if(initial)await c.evaluate(`document.querySelectorAll('[data-deck-lane]')[${initial.active}]?.querySelector('header strong').click()`).catch(()=>{});writeFileSync(folder+'/chat-swipe-tests.json',JSON.stringify(results,null,2));c.close()}

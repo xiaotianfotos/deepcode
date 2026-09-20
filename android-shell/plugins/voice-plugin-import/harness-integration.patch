@@ -1,0 +1,350 @@
+diff --git a/packages/client/runtime/src/client/contract/sessions.ts b/packages/client/runtime/src/client/contract/sessions.ts
+index 27b9d2d..e23bad2 100644
+--- a/packages/client/runtime/src/client/contract/sessions.ts
++++ b/packages/client/runtime/src/client/contract/sessions.ts
+@@ -39,6 +39,14 @@ export interface ISessions {
+    * @param id - session id (must exist in the list; unknown ids fail loud).
+    */
+   open(id: SessionId): void
++  /**
++   * Keep a non-current session's conversation window staged for a composed
++   * multi-session surface. The returned disposer releases that lease. Leases
++   * are reference-counted and do not change the user's current selection.
++   * @param id - listed session whose history window must stay open.
++   * @returns an idempotent lease disposer.
++   */
++  acquireStage(id: SessionId): () => void
+   /**
+    * Open a healthy catalog child through its exact direct-parent address.
+    * @param address - catalog-derived parent and child ids.
+diff --git a/packages/client/runtime/src/client/sessions/service.ts b/packages/client/runtime/src/client/sessions/service.ts
+index c66da4e..0c3bbf2 100644
+--- a/packages/client/runtime/src/client/sessions/service.ts
++++ b/packages/client/runtime/src/client/sessions/service.ts
+@@ -266,9 +266,33 @@ export class SessionRuntime implements ISessions {
+    * keep the staged scope's frozen view alive until the stage moves on).
+    */
+   private watched: SessionId | undefined
++  /** Additional non-current stage leases owned by multi-session surfaces. */
++  private readonly stageRefs = new Map<SessionId, number>()
+   /** Removed-while-staged sessions whose teardown waits for the stage to move away. */
+   private readonly deferredRemovals = new Set<SessionId>()
+ 
++  /**
++   * Keep one listed session open without selecting it. This is the narrow
++   * lifecycle seam used by views that intentionally render several sessions
++   * at once; selection remains a separate user action.
++   */
++  acquireStage(id: SessionId): () => void {
++    const record = this.resolve(id)
++    if (record === undefined) throw new Error(`sessions: cannot stage unavailable session "${id}"`)
++    this.stageRefs.set(id, (this.stageRefs.get(id) ?? 0) + 1)
++    void record.session.open()
++    let released = false
++    return () => {
++      if (released) return
++      released = true
++      const refs = this.stageRefs.get(id)
++      if (refs === undefined || refs <= 1) this.stageRefs.delete(id)
++      else this.stageRefs.set(id, refs - 1)
++      this.sweepDeferred()
++      this.pruneScopes()
++    }
++  }
++
+   /**
+    * @param ctx - client root context (scope fibers mount under it).
+    * @param api - wire client shared with every Session.
+@@ -737,7 +761,7 @@ export class SessionRuntime implements ISessions {
+   private pruneScopes(): void {
+     for (const [id, record] of this.scopes) {
+       if (this.eligible(id)) continue
+-      if (id === this.watched) {
++      if (this.isStaged(id)) {
+         this.deferredRemovals.add(id)
+         continue
+       }
+@@ -771,7 +795,7 @@ export class SessionRuntime implements ISessions {
+       /* v8 ignore next -- defensive: only the staged id ever defers, and every
+        * stage move sweeps first, so the set cannot contain the id the stage just
+        * moved to; kept as a guard against future extra sweep call sites. */
+-      if (id === this.watched) continue
++      if (this.isStaged(id)) continue
+       // Eligible again? (A re-added id cancels the deferred teardown.)
+       if (this.eligible(id)) {
+         this.deferredRemovals.delete(id)
+@@ -788,4 +812,9 @@ export class SessionRuntime implements ISessions {
+       }
+     }
+   }
++
++  /** Current-stage and explicit leases share one teardown predicate. */
++  private isStaged(id: SessionId): boolean {
++    return id === this.watched || this.stageRefs.has(id)
++  }
+ }
+diff --git a/packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx b/packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx
+index 08f22ed..09a176f 100644
+--- a/packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx
++++ b/packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx
+@@ -762,6 +762,7 @@ export function WorkspaceBrowser({
+   searchResultLimit,
+   useDirectoryFlow,
+   useHostDescription,
++  useClaimedSessions,
+   renderSlot,
+   t,
+ }: WorkspaceBrowserProps) {
+@@ -769,6 +770,11 @@ export function WorkspaceBrowser({
+   const workspaces = useWorkspaces(state => state.items)
+   const workspacePhase = useWorkspaces(state => state.phase)
+   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
++  const claimedSessionIds = useClaimedSessions(sessionIds => sessionIds)
++  const unlistedSessionIds = useMemo(
++    () => [...new Set([...archivedSessionIds, ...claimedSessionIds])],
++    [archivedSessionIds, claimedSessionIds],
++  )
+   // Live occupancy of this surface's directory-flow hole (the same source the
+   // flow reads): a composition without a picking affordance can add nothing.
+   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
+@@ -1009,6 +1015,14 @@ export function WorkspaceBrowser({
+ 
+   return (
+     <div className={clsx(css.root, !wide && css.rail)}>
++      {renderSlot('sidebar.workspaces.before', {
++        wide,
++        sessionActions: {
++          rename: onSessionRename,
++          fork: forkSession,
++          archive: archiveSession,
++        },
++      })}
+       <div className={css.sectionHeader}>
+         {wide && (
+           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
+@@ -1147,7 +1161,7 @@ export function WorkspaceBrowser({
+               useSessions={useSessions}
+               open={open}
+               workspaces={workspaces}
+-              archivedSessionIds={archivedSessionIds}
++              archivedSessionIds={unlistedSessionIds}
+               query={normalizedQuery}
+               remote={remoteSearch}
+               resultLimit={searchResultLimit}
+@@ -1159,7 +1173,7 @@ export function WorkspaceBrowser({
+               <FlatList
+                 useSessions={useSessions} open={open} forkSession={forkSession}
+                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+-                archivedSessionIds={archivedSessionIds}
++                archivedSessionIds={unlistedSessionIds}
+                 orderBy={orderBy}
+                 sessionOrderByAccount={sessionOrderByAccount}
+                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
+@@ -1181,7 +1195,7 @@ export function WorkspaceBrowser({
+                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
+                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
+                 setSessionOrder={actions.setSessionOrder}
+-                archivedSessionIds={archivedSessionIds}
++                archivedSessionIds={unlistedSessionIds}
+                 startSession={startSession}
+                 open={open}
+                 insertWorkspaceBefore={insertWorkspaceBefore}
+diff --git a/packages/client/ui-workspace/src/client/contract/slots.ts b/packages/client/ui-workspace/src/client/contract/slots.ts
+index bdd8505..7636789 100644
+--- a/packages/client/ui-workspace/src/client/contract/slots.ts
++++ b/packages/client/ui-workspace/src/client/contract/slots.ts
+@@ -53,6 +53,8 @@ export interface DirectoryFlowOwnerProps {
+ 
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+   interface SlotMap {
++    /** Pinned multi-session controls rendered above the ordinary workspace browser. */
++    'sidebar.workspaces.before': { kind: 'list'; scope: 'root'; owner: WorkspaceBeforeOwnerProps }
+     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
+     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
+@@ -60,6 +62,21 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+   }
+ }
+ 
++/** Sidebar geometry shared with controls mounted above the workspace list. */
++export interface WorkspaceBeforeOwnerProps {
++  /** Whether the sidebar is expanded rather than the compact rail. */
++  wide: boolean
++  /** Reuse the browser-owned session operations and dialogs for claimed rows. */
++  sessionActions: {
++    /** Open the browser-owned rename dialog. */
++    rename: (sessionId: SessionId, currentTitle: string) => void
++    /** Fork at the last completed turn and open the child. */
++    fork: (sessionId: SessionId) => void
++    /** Archive the session; resolves after Host acceptance. */
++    archive: (sessionId: SessionId) => Promise<void>
++  }
++}
++
+ /** The two directory-flow holes; a flow package's client half registers its one component into both. */
+ export type DirectoryFlowSlotName =
+   | 'conversation.hero.workspace.directoryFlow'
+@@ -91,6 +108,8 @@ export type WorkspaceBrowserInjected = {
+   hooks: DirectoryPickingInjected['hooks'] & {
+     /** Current generation's Host description, bound by the slot renderer. */
+     hostDescription: HostDescriptionSource
++    /** Sessions presented by optional sidebar plugins instead of the ordinary lists. */
++    claimedSessions: HostObservable<readonly SessionId[]>
+   }
+   /**
+    * Start a New Session in a Workspace: reuse-or-create its blank session and
+@@ -142,7 +161,7 @@ export type WorkspaceBrowserInjected = {
+ /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
+ export type WorkspaceBrowserProps =
+   PropsRuntime<'sidebar.workspaces'>
+-  & PropsRenderSlots<'sidebar.workspaces.directoryFlow'>
++  & PropsRenderSlots<'sidebar.workspaces.before' | 'sidebar.workspaces.directoryFlow'>
+   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
+   & Omit<WorkspaceBrowserInjected, 'hooks'>
+   & PropsHooks<WorkspaceBrowserInjected['hooks']>
+diff --git a/packages/client/ui-workspace/src/client/index.ts b/packages/client/ui-workspace/src/client/index.ts
+index 93269c2..668d9ec 100644
+--- a/packages/client/ui-workspace/src/client/index.ts
++++ b/packages/client/ui-workspace/src/client/index.ts
+@@ -14,6 +14,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+ // Type-only: pulls the locale plugin's Context merge (ctx.locale).
+ import type {} from '@deepseek-ai/dsh-client-locale/client'
+ import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
++import { WorkspaceSessionClaimsRuntime } from './session-claims.ts'
+ import { createWorkspaceViewStore } from './stores.ts'
+ import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
+ import { WorkspacePicker } from './WorkspacePicker.tsx'
+@@ -23,6 +24,7 @@ export type {
+   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
+   WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
+ } from './contract/slots.ts'
++export type { WorkspaceSessionClaims } from './session-claims.ts'
+ export type { WorkspaceKey } from './locales.ts'
+ 
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -54,6 +56,8 @@ export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'connection'
+ export function apply(ctx: ClientContext): void {
+   const connection = ctx.get('connection') as ConnectionHandle
+   const hostDescription = connection.hostDescription
++  const sessionClaims = new WorkspaceSessionClaimsRuntime()
++  ctx.provide('workspaceSessionClaims', sessionClaims)
+   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
+ 
+   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
+@@ -102,7 +106,7 @@ export function apply(ctx: ClientContext): void {
+       await ctx.workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
+     },
+     createWorkspace: input => ctx.workspaces.create(input),
+-    hooks: { directoryFlow: browserFlowSource, hostDescription },
++    hooks: { directoryFlow: browserFlowSource, hostDescription, claimedSessions: sessionClaims },
+   })
+   const pickerInjected = (): WorkspacePickerInjected => ({
+     createWorkspace: input => ctx.workspaces.create(input),
+@@ -113,7 +117,10 @@ export function apply(ctx: ClientContext): void {
+   ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
+     {
+       name: 'sidebar.workspaces',
+-      children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
++      children: {
++        'sidebar.workspaces.before': { kind: 'list', scope: 'root' },
++        'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
++      },
+       store: createWorkspaceViewStore(),
+       inject: browserInjected,
+       locale: NS,
+diff --git a/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx b/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx
+index 820d2bd..8d53935 100644
+--- a/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx
++++ b/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx
+@@ -81,6 +81,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
+     createWorkspace: vi.fn(async () => workspace('created', [])),
+     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
+     useHostDescription: selector => selector(undefined),
++    useClaimedSessions: hook<readonly SessionId[]>([]),
+     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
+     t,
+     ...overrides,
+diff --git a/packages/test-support/client-runtime/src/sessions.ts b/packages/test-support/client-runtime/src/sessions.ts
+index c014d6f..5c182b6 100644
+--- a/packages/test-support/client-runtime/src/sessions.ts
++++ b/packages/test-support/client-runtime/src/sessions.ts
+@@ -192,6 +192,12 @@ export class TestSessions implements ISessions {
+   /** The wire schema's `session.search` result bound (production parity). */
+   readonly searchResultLimit = SESSION_SEARCH_RESULT_LIMIT
+ 
++  /** Test parity for the production multi-session stage lease. */
++  acquireStage(id: SessionId): () => void {
++    if (!this.records.has(id)) throw new Error(`test session "${id}" is unavailable`)
++    return () => {}
++  }
++
+   /** Replaceable search behavior (see {@link TestSessions.stubSearch}). */
+   private searchStub: ((query: string, signal: AbortSignal) => { items: SessionSearchResultItem[]; hasMore: boolean }) | undefined
+ 
+diff --git a/packages/client/ui-workspace/src/client/session-claims.ts b/packages/client/ui-workspace/src/client/session-claims.ts
+new file mode 100644
+index 0000000..e05eecb
+--- /dev/null
++++ b/packages/client/ui-workspace/src/client/session-claims.ts
+@@ -0,0 +1,61 @@
++import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
++import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
++
++const EMPTY_SESSION_IDS: readonly SessionId[] = []
++
++/**
++ * Cross-plugin ownership ledger for sessions presented outside the ordinary
++ * workspace lists. Claiming changes presentation only: the Host session,
++ * workspace account, ordering, and archive state remain untouched.
++ */
++export interface WorkspaceSessionClaims extends HostObservable<readonly SessionId[]> {
++  /** Replace one plugin's complete claim set. */
++  replace: (owner: string, sessionIds: readonly SessionId[]) => void
++  /** Release every session claimed by one plugin. */
++  release: (owner: string) => void
++}
++
++declare module '@deepseek-ai/cordis' {
++  interface Context {
++    workspaceSessionClaims: WorkspaceSessionClaims
++  }
++}
++
++function sameIds(left: readonly SessionId[], right: readonly SessionId[]): boolean {
++  return left.length === right.length && left.every((id, index) => id === right[index])
++}
++
++/** Root-scoped implementation owned by ui-workspace. */
++export class WorkspaceSessionClaimsRuntime implements WorkspaceSessionClaims {
++  private readonly byOwner = new Map<string, readonly SessionId[]>()
++  private readonly listeners = new Set<() => void>()
++  private snapshot: readonly SessionId[] = EMPTY_SESSION_IDS
++
++  getSnapshot(): readonly SessionId[] { return this.snapshot }
++
++  subscribe(listener: () => void): () => void {
++    this.listeners.add(listener)
++    return () => { this.listeners.delete(listener) }
++  }
++
++  replace(owner: string, sessionIds: readonly SessionId[]): void {
++    const next = [...new Set(sessionIds)]
++    const previous = this.byOwner.get(owner) ?? EMPTY_SESSION_IDS
++    if (sameIds(previous, next)) return
++    if (next.length === 0) this.byOwner.delete(owner)
++    else this.byOwner.set(owner, next)
++    this.publish()
++  }
++
++  release(owner: string): void {
++    if (!this.byOwner.delete(owner)) return
++    this.publish()
++  }
++
++  private publish(): void {
++    const next = [...new Set([...this.byOwner.values()].flat())]
++    if (sameIds(this.snapshot, next)) return
++    this.snapshot = next.length === 0 ? EMPTY_SESSION_IDS : next
++    for (const listener of this.listeners) listener()
++  }
++}
