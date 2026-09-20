@@ -1,0 +1,62 @@
+[
+  {
+    "path": "android-shell/plugins/dsh-android-codex/tests/account.test.mjs",
+    "rule": "credential-literal",
+    "fingerprint": "0842b195383f49ce4665f8009e8b00612f1a8d1134a016951916f23eb3415d5b",
+    "reason": "Synthetic must-not-leak account fixture, not a credential."
+  },
+  {
+    "path": "android-shell/plugins/dsh-android-codex/tests/account.test.mjs",
+    "rule": "credential-literal",
+    "fingerprint": "0842b195383f49ce4665f8009e8b00612f1a8d1134a016951916f23eb3415d5b",
+    "reason": "Synthetic must-not-leak account fixture, not a credential."
+  },
+  {
+    "path": "android-shell/vendor/dsh-undo-savepoint/lib/index.js",
+    "rule": "credential-literal",
+    "fingerprint": "fae3149a34f161e55e70575db7aba2ca3a7c3a653a3768d2d0baf22c304d4e0a",
+    "reason": "Upstream comment demonstrating redaction; no credential."
+  },
+  {
+    "path": "scripts/android-app-lab/test-session-supervisor.py",
+    "rule": "credential-literal",
+    "fingerprint": "5754bbfbda43d4410a1bde016f23df3d899df588e59c88c8f8815e25cf2d77dc",
+    "reason": "Synthetic hidden-value fixture used to test metadata redaction."
+  },
+  {
+    "path": "scripts/probe-forced-aligner-pad.py",
+    "rule": "credential-literal",
+    "fingerprint": "9498ef307bfa29f9b196797c3cc1f93221fee7c09512de7d5607513a4d461206",
+    "reason": "String concatenation of runtime-generated key; no literal key."
+  },
+  {
+    "path": "android-shell/artwork/startup/ocean-source.mp4",
+    "rule": "unreviewed-binary",
+    "fingerprint": "d85f908d06598fc52fe784fa2d3e19170c51a712a6e2dc609ef86f3ffaea203f",
+    "reason": "User-provided underwater startup artwork source; retained for reproducible loop preparation."
+  },
+  {
+    "path": "android-shell/app/src/main/res/raw/startup_ocean_loop.mp4",
+    "rule": "unreviewed-binary",
+    "fingerprint": "300503270dcc2f3c6ce198aea15223836fc1c4371ff6ff55061d286e488e5d09",
+    "reason": "Silent 72-frame startup animation application resource, prepared from reviewed artwork."
+  },
+  {
+    "path": "android-shell/app/src/test/java/com/dsharnessmobile/shell/MuxHandshakeAuthTest.kt",
+    "rule": "credential-literal",
+    "fingerprint": "05b44fa919ad3c7731c48ec4f73963f21b8cdff5c20258f3fbf387637f0a1118",
+    "reason": "Reviewed upstream v0.14.0 synthetic dsh-auth cookie used by authentication regression fixtures; no usable credential."
+  },
+  {
+    "path": "android-shell/plugins/dsh-android-browser/test/tier.test.mjs",
+    "rule": "credential-literal",
+    "fingerprint": "927723d3fa65476840bb47ede9d799b3f3d9e49dabd9b2bca2bb1cbd908c021e",
+    "reason": "Reviewed upstream v0.14.0 synthetic dsh-auth cookie used by authentication regression fixtures; no usable credential."
+  },
+  {
+    "path": "android-shell/plugins/dsh-android-file-open/test/auth.test.mjs",
+    "rule": "credential-literal",
+    "fingerprint": "927723d3fa65476840bb47ede9d799b3f3d9e49dabd9b2bca2bb1cbd908c021e",
+    "reason": "Reviewed upstream v0.14.0 synthetic dsh-auth cookie used by authentication regression fixtures; no usable credential."
+  }
+]

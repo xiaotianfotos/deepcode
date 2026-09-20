@@ -1,28 +1,99 @@
-build/
-.gradle/
-.gradle-home/
-local.properties
-snapshot/
-app/src/main/assets/snapshot.tar.xz
-# 快照指纹声明值（0.13.8-b ST-04 / F-ENV-01）：由构建链在拷贝 tar 后重写，与 tar 同属「本地产物」，
-# 不入库——入库会造成「声明值是某一次单 ABI 构建的事实」，且与上面 tar 的忽略语义不一致。
-# 出库后净检出/CI 下 tar 与 sha 均缺席，门禁打印 SKIP 计数；构建链以 --require 严格跑（缺席即失败）。
-app/src/main/assets/snapshot.sha256
-# 敏感数据（安全审计 2026-08-14）
+/downloads/
+/artifacts/
+/logs/
+/.tools
+/upstream/
+**/__pycache__/
+**/node_modules/
+**/node_modules
+**/.DS_Store
+*.apk
+*.aab
 *.credentials.yaml
-token*
-*.key
 *.pem
+*.key
+
+# Machine-local state, credentials, SDKs and accidental Windows output trees.
+/.local/
+/.xring-lab/
+/D:/
+.env
+.env.*
+!.env.example
+*.local.env
+*.keystore
+*.jks
 *.p12
-.kotlin/
-# 插件构建产物（云端/本地 npm 构建生成，不入库；2026-08-31 收口）
-plugins/*/lib/
-plugins/*/node_modules/
-plugins/*/cbin_*
+*.pfx
+**/adbkey
+**/adbkey.pub
+**/auth.json
+**/credentials.json
+**/.codex/
+**/.dsh/
+**/.gradle/
+**/.gradle-home/
+**/.kotlin/
+**/local.properties
 
-# Python 编译缓存
-__pycache__/
+# Raw device evidence stays on the originating machine, including old tracked
+# captures (removed from the index, never deleted by repository cleanup).
+/docs/validation/
+/evidence/
+/asr-lab/evidence/
+/releases/
+/android-shell/app/src/debug/assets/
+/asr-lab/app/src/main/assets/samples/*.wav
 
-# 本地临时工作区（排查截图与中间产物）：0.14.0 两次误入提交后固化
-.deploy-tmp/
+# Machine-bound NAS rendering experiment; not a portable project build input.
+/scripts/hyperframes/render-ubuntu.sh
 
+# Rebuildable runtime payloads; keep source, lock manifests and licenses.
+*.gguf
+*.safetensors
+*.onnx
+*.tflite
+*.hprof
+*.heapdump
+*.log
+*.tar.xz
+*.tar.gz
+*.tgz
+
+# One-off research/acceptance reports stay local, even when sanitized.
+/docs/research/
+/docs/reports/
+/docs/CODEX-BACKEND-RESEARCH.md
+/docs/FORCED-ALIGNER-O3-INVESTIGATION.md
+/docs/MEDIA-RUNTIME-RESEARCH.zh-CN.md
+/docs/PAD9-ACCEPTANCE.md
+/docs/PAD9-HYPERFRAMES.md
+/docs/PAD9-XIAOAI-MIMO.md
+/docs/QWEN3-ASR-ANDROID-LAB.md
+/docs/REPOSITORY-CLEANUP-20260913.md
+/docs/VOICE-DECK-IMPORT-REVIEW.md
+/docs/XIAOMI-18-FOLD-PREFLIGHT.md
+/docs/XIAOMI-PLATFORM-DIAGNOSTICS.md
+/docs/XRING-NPU-RESEARCH.md
+/docs/XRING-O1-COMMUNITY-RESEARCH.md
+/docs/HYPEROS4-BACKGROUND-ACCEPTANCE.md
+/PLAN.md
+
+# Archived research and cancelled/unintegrated prototypes.
+/platform-diagnostics/
+/scripts/sme-lab/
+/android-shell/plugins/dsh-client-skin-mist/
+/android-shell/plugins/dsh-client-voice-lark-a2/
+/android-shell/plugins/voice-plugin-import/original-deck/
+/RESEARCH.zh-CN.md
+/docs/VOICE-PERFORMANCE-MILESTONE.md
+/docs/PHONE-APP-SELFHOST.md
+/scripts/install-mist-skin.py
+/scripts/test-mist-skin.mjs
+/scripts/build-platform-diagnostics.py
+/scripts/test-platform-diagnostics.py
+
+# Nested dependency caches and accidental Windows drive directories.
+**/[A-Za-z]:/
+**/.npm-cache/
+**/_cacache/
