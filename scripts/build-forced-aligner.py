@@ -7,12 +7,16 @@ p=argparse.ArgumentParser();p.add_argument("--vulkan",action="store_true");args=
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'.tools/qwen3-aligner-cpp';REV='6dcc586e5073fd6e85ee5728e75f0903d6c70c6c';GGML='9be313313c8ecb9488911bd64550190e3ed80f38'
 def run(args):subprocess.run(list(map(str,args)),check=True,cwd=ROOT)
-if not SOURCE.exists():run(['git','clone','--recurse-submodules','https://github.com/predict-woo/qwen3-asr.cpp.git',SOURCE])
+SOURCE.parent.mkdir(parents=True,exist_ok=True)
+if not SOURCE.exists():
+ run(['git','clone','--no-checkout','https://github.com/predict-woo/qwen3-asr.cpp.git',SOURCE])
+ run(['git','-C',SOURCE,'checkout','--detach',REV])
 assert subprocess.check_output(['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip()==REV
+run(['git','-C',SOURCE,'submodule','update','--init','--recursive'])
 assert subprocess.check_output(['git','-C',str(SOURCE/'ggml'),'rev-parse','HEAD'],text=True).strip()==GGML
 # Keep upstream sources untouched: only adapt its CMake policy in a disposable build source tree.
 original=subprocess.check_output(['git','-C',str(SOURCE),'show',REV+':CMakeLists.txt'],text=True)
-staged=ROOT/'.tools/qwen3-aligner-android-source';staged.mkdir(exist_ok=True)
+staged=ROOT/'.tools/qwen3-aligner-android-source';staged.mkdir(parents=True,exist_ok=True)
 for name in ['include','cli','ggml','third_party']:
  link=staged/name
  if not link.exists():link.symlink_to(SOURCE/name,target_is_directory=True)

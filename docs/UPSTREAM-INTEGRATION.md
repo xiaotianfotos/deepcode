@@ -22,7 +22,7 @@
 3. 调用 staging 脚本，再将目录中的 `usr`/`home` 用 tar + `xz -T4` 打包到实验工作树的 `android-shell/app/src/main/assets/snapshot.tar.xz`，更新同目录 snapshot.sha256。
 4. 在 android-shell 执行 `./gradlew :app:testDebugUnitTest :app:assembleDebug -PruntimeAbi=x86_64 -PversionNameSuffix=-deepcode-upstream-test`，校验签名和 ZIP 对齐，再安装到独立模拟器。首次解压完成前不终止进程。
 
-ARM64 实验改用同一 release 的 `snapshot-arm64.tar.xz`，Gradle ABI 为 `arm64-v8a`。上游快照不包含下游全部原生能力：需从已验证的本地构建保留 Codex、ASR/对齐、PRoot 等 ARM64 native payload 和对应许可证，逐文件记录并核对哈希；Debian 安装 bundle 随快照保留，已安装 rootfs 位于用户 HOME，不重置。沿用设备现有签名，不能使用新签名覆盖。
+ARM64 使用同一 release 的 `snapshot-arm64.tar.xz`，Gradle ABI 为 `arm64-v8a`。首次安装按 [FIRST-DEPLOY.md](FIRST-DEPLOY.md) 从公开输入构建 Codex、ASR/对齐、PRoot native payload 与许可证并装配 Debian bundle，不要求既有维护者构建。升级设备上的用户 rootfs 不重置；签名不兼容时停止，不以卸载清数据绕过。
 
 组合中的插件 ID 必须延续既有安装的 ID，例如 `android-codex`、`speech-services`，不能以包目录名生成新 ID。工厂配置合并按 ID 工作；改变 ID 会使同一插件加载两次。x86_64 仅停用 Codex host/Live，ARM64 保留正常挂载。
 

@@ -3,7 +3,7 @@
 import base64, hashlib, io, json, pathlib, shutil, tarfile, urllib.request, subprocess, os
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 lock=json.loads((ROOT/'android-shell/plugins/dsh-android-codex/runtime-lock.json').read_text())
-cache=ROOT/'.tools/codex-integration';cache.mkdir(exist_ok=True)
+cache=ROOT/'.tools/codex-integration';cache.mkdir(parents=True,exist_ok=True)
 archive=cache/'android-runtime.tgz'
 if not archive.exists():
     partial=archive.with_suffix('.part')
@@ -14,6 +14,7 @@ assert hashlib.sha256(data).hexdigest()==lock['sha256'], 'Runtime checksum misma
 assert 'sha512-'+base64.b64encode(hashlib.sha512(data).digest()).decode()==lock['dist']['integrity']
 target=ROOT/'android-shell/app/src/main/jniLibs/arm64-v8a';target.mkdir(parents=True,exist_ok=True)
 licenses=ROOT/'android-shell/app/src/main/assets/licenses'
+licenses.mkdir(parents=True,exist_ok=True)
 manifest={'version':lock['version'],'source':lock['dist']['tarball'],'archive_sha256':lock['sha256'],'files':{}}
 with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tar:
     for source,name in [('package/bin/codex.bin','libdsh_codex.so'),('package/bin/codex-code-mode-host','libdsh_codex_host.so'),('package/bin/libc++_shared.so','libc++_shared.so')]:
@@ -43,5 +44,6 @@ manifest['files'][identity]=hashlib.sha256((target/identity).read_bytes()).hexdi
 for name,flags in [('libdsh_codex_launcher.so',[]),('libdsh_codex_shell.so',['-DDSH_CODEX_SHELL'])]:
     subprocess.run([str(compiler),'-O2','-fPIE','-pie','-Wl,-z,max-page-size=16384',*flags,str(ROOT/'android-shell/app/src/main/cpp/codex/launcher.c'),'-o',str(target/name)],check=True)
     manifest['files'][name]=hashlib.sha256((target/name).read_bytes()).hexdigest()
+(ROOT/'artifacts').mkdir(parents=True,exist_ok=True)
 (ROOT/'artifacts/codex-runtime.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(json.dumps(manifest,indent=2))

@@ -1,47 +1,51 @@
-# 平板 Android App 开发 Skill
+# 设备内 Android App 开发 Skill
 
-设备：yingtian / M367FC。本次只配置平板，没有更新 Fold，也没有替换 DeepCode APK。
+[android-app-dev](../android-shell/codex-skills/android-app-dev/SKILL.md) 用于在运行 DeepCode 的 Android 设备上开发原生 Java App。它通过宿主 Termux Python 调用 ARM64 Debian 构建工具，并使用应用自身无线 ADB 安装与调试。新安装不默认具备 Debian、SDK 输入、ADB 授权或 imagegen；准备方法见 [构建环境](ANDROID-BUILD-ENVIRONMENT.md)。
 
-## 已部署内容
+## 前提与路径
 
-- 本机 ADB：沿用 APK 内置 adb，通过原生 AndroidBridge 完成应用自己的无线配对；T1、allowSwitch/paired/connected/authorized 均为 true。电脑与应用身份独立，不复制私钥。
-- Debian：补齐 OpenJDK17、ARM64 aapt/zipalign、apksigner、android-framework-res、zip、Python Pillow；复制 API36 android.jar 与 Build Tools35 D8。真实版本在验收目录toolchain.log。
-- `android-app-dev`：源码 `android-shell/codex-skills/android-app-dev`；设备安装到 `files/home/.dsh/codex-android/home/skills/android-app-dev`。
-- `imagegen`：设备已有 `.system/imagegen`，保持原件；新增开发 Skill 引导按原 imagegen 规则调用内置工具并持久保存图标，未配置额外 API key。
+- 目标设备与开发/安装范围由用户指定。DeepCode、Codex 运行时及相应账户配置须可用；保留其他项目、会话和模型。
+- 安装并启用 Debian 插件，确认 ARM64 Java 17、aapt、zipalign、apksigner、framework-res、zip、Python/Pillow，以及锁定的 `android.jar` 和 `d8.jar` 可用。电脑构建工具可执行不表示同一二进制能在 Android ARM64 Debian 运行。
+- 技能源文件复制至实际 Codex HOME 的 `skills/android-app-dev`；常见 HOME 为 `files/home/.dsh/codex-android/home`，相对于 DeepCode 私有根。保留已有技能和用户修改，更新前审查差异。
+- 构建 helper 在宿主 Termux Python 中执行，再通过现有 Debian runner 编译；ADB helper 不直接放入 Debian 创建另一套身份。
+- 在应用内「设置 → 开发者选项 → 安卓调试授权」确认本应用配对与访问开关。电脑 ADB 配对不能替代，身份和权限边界见 [设备与调试](../android-shell/docs/AGENTS/devices-and-debugging.md)。
 
-## 用户如何使用
+共享项目可使用 `/storage/emulated/0/work/my-app`，但实际目录由用户选择并授权。先运行技能中的 `app.py doctor`：它检查 SDK 输入文件、ADB 程序和应用连接，不完整验证所有 Debian 工具或构建依赖；仍需一次真实构建验证工具链。不要将输出文件存在等同已安装或验收通过。
 
-在平板 DeepCode 选择 Codex，打开或新建共享 work 中的安卓项目，正常描述需求即可。例如：
+## 使用与能力
 
-> 用 android-app-dev 帮我在平板上开发一个番茄钟。用 imagegen 生成应用图标，编译成 APK，安装在这台平板上，检查运行日志和截图。
-
-已有验收会话“平板安卓应用开发 · Skill验证”，项目 `/storage/emulated/0/work/pad-app-lab`，可继续让它修改。Skill 允许正常自动发现，不需要每次写出全部绝对路径；明确使用技能名有助于新会话选中。
-
-共享项目中的 `AndroidManifest.xml`、`src/`、`res/`、`assets/`、`app.apk`、`build-receipt.json` 均在平板。编译使用现有 Debian runner，ADB helper 运行在宿主 Termux Python；两层仍各有用途，不把 ADB 放入 Debian 当另一套身份。
-
-## 能力与边界
+在设备 DeepCode 的 Codex 会话中打开共享项目并描述需求，例如：“用 android-app-dev 开发一个番茄钟，编译并安装在这台设备上，检查日志和截图。”如需生成图标，先确认本次会话的图像工具和技能可用再加入该需求。
 
 | 入口 | 行为 |
 |---|---|
-| app.py doctor | 检查SDK输入、ADB程序、应用自身授权与连接 |
-| app.py build --project ... | aapt资源/R.java→javac→D8→zipalign→签名，输出APK和SHA收据 |
-| app.py install / launch | 核对当前项目包名、APK收据；本机覆盖安装与启动 |
-| app.py logs / capture / ui | 限定包进程日志、PNG截屏、UI树 |
-| app.py tap / key / text | 系统ADB输入；若被INJECT_EVENTS拒绝，报告实情 |
-| icons.py | 在Debian用Pillow把项目图标转为传统多密度与自适应图标资源 |
+| `app.py doctor` | 检查 SDK 输入文件、ADB 程序与应用自身连接 |
+| `app.py build --project ...` | aapt 资源/R.java → javac → D8 → zipalign → 签名，输出 APK 和 SHA 收据 |
+| `app.py install / launch` | 核对项目包名与产物收据，覆盖安装或启动该项目 |
+| `app.py logs / capture / ui` | 获取限定进程日志、截图、UI 树 |
+| `app.py tap / key / text` | 系统 ADB 输入；权限拒绝时报告错误 |
+| `app.py return` | 返回 DeepCode |
+| `icons.py` | 使用 Debian Pillow 将现有图标打包为多密度与自适应资源 |
 
-图像创作调用当前 Codex 的内置 image_gen；尺寸转换由 Pillow 完成，两者职责分开。原图与 prompt 留在共享项目，APK 引用实际资源。工具不存在或生成失败时，Skill 要求如实报告，不自动切换到收费API/CLI。图像生成与模型推理是云服务，本机编译并不等于全离线AI。
+运行命令和参数见技能正文；从实际 skill 路径定位脚本，不能把电脑路径当设备路径。项目包含 `AndroidManifest.xml`、`src/`、可选 `res/`，产物是 `app.apk` 与 `build-receipt.json`。选定的原图可存 `assets/` 作为项目素材；当前构建器只显式打包 `res/`，不自动将项目 `assets/` 加入 APK。
 
-自适应图标打包遵循 [Android官方分层/安全区说明](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)，当前产物含传统mipmap和v26 adaptive-icon。不宣称此最小构建器已支持Android13 monochrome主题图标。
+当前轻量构建器使用 API 36 Java stub 与 Debian API 29 framework 资源，Manifest 按工具链设置 minSdk 26 / targetSdk 34；新的资源属性不可仅凭 Java API 版本推定可用。Java 匿名类可避开当前 lambda stub 兼容问题。完整 Gradle、Kotlin、Compose、NDK 工具链不因该技能存在而就绪，也不能擅自将已有复杂项目重写为简化 Java 项目。
 
-这是可复用的原生Java开发辅助Skill，不只是硬编码的单个计数器脚本。但完整Gradle/Kotlin/Compose/NDK工具链仍未验证；Google Linux原生宿主工具不能因目标支持ARM就假定可在ARM64上运行。当前API36 Java stub配API29资源框架，Manifest建议min26/target34，lambda用匿名类规避已知stub兼容问题。
+开发签名保存在私有 Debian `/root/android-app-lab/debug.keystore`，不拷贝至共享项目或 Git，不用作正式发行密钥。同包名升级须保持兼容签名；key 丢失/变化时不要自动卸载用户应用。helper 拒绝覆盖 DeepCode 自身，但其他应用仍需用户的任务授权。安装和系统输入受 Android/OEM 规则约束；`INSTALL_FAILED_USER_RESTRICTED` 不自动表示配对失效，`INJECT_EVENTS` 拒绝也不能记为成功。前台交互和安装串行，完成后退出测试 App 并返回 DeepCode。
 
-保持设备无线调试与应用内授权。端口变化先让DeepCode重新发现连接；只在配对失效时重新配对。实际安装仍受HyperOS安装确认策略限制。开发签名留私有Debian目录，不导出到项目。helper拒绝覆盖DeepCode本体，日常App开发不改变账号、已有会话或其他设备。
+## 可选图标生成
 
-## 维护
+本仓库不保证安装 `.system/imagegen` 或提供内置图像工具。需要 AI 栅格图标时先发现可用技能、读取其说明并核对当前工具列表；缺少工具时明确报告，可使用用户已有素材，不自动切换收费服务或索要 API key。模型推理和图像生成可能依赖云服务，本机编译不等于离线 AI。
 
-部署入口 `scripts/android-app-lab/deploy-pad-skill.py SERIAL` 核对yingtian与快照事务，投放Skill/SDK输入并校验SHA；不会替换APK或自动执行apt。`pad-setup-prompt.txt`、`pad-build-prompt.txt` 是实际平板Codex验证任务，可经参数化 `agent-turn.py` 执行。新建验证会话会临时选择Codex模型，并用settings revision恢复原全局默认。
+原图及必要创作说明保存在共享项目，`icons.py` 只做尺寸转换和资源打包。它支持传统 mipmap 与 v26 adaptive-icon，不宣称支持 Android 13 monochrome 图标。分层与安全区参见 [Android 官方说明](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)；透明前景需实际带 alpha，不能将带底色方图描述为透明分层图标。
 
-长时间运行引擎的token启动行可能已从engine.log轮转消失；Device.authenticate现先复用壳已保存Cookie，并实际请求验证，只在内存使用，不输出或写入验收文档。
+## 当前部署脚本限制
 
-结果见 [实机验收目录](validation/2026-09-11-pad-app-dev/README.md)。
+[scripts/android-app-lab/deploy-pad-skill.py](../scripts/android-app-lab/deploy-pad-skill.py) 是保留的特定机型部署辅助脚本，不是新设备通用安装器。当前源码有以下前提和行为：
+
+- 硬编码检查 `ro.product.device == yingtian`；其他机型会失败。需要 debug 包的 `run-as`，并依赖电脑 `.tools/android-sdk` 中 API 36 `android.jar` 与 Build Tools 35.0.0 `d8.jar`。
+- 只检查 `.snapshot-transaction`，不完整检查 `.snapshot-stage`、运行中 Agent 或现有技能修改。调用前须按设备详档完成保护检查；不能依赖脚本代替。
+- 逐文件写入技能和 bootstrap，并验证传输 SHA；随后才断言既有 `.system/imagegen/SKILL.md` 存在。因此失败不表示未发生写入，也不会自动回滚。
+- 不安装 Debian、不执行 apt、不替换 DeepCode APK；复制的工具链安装脚本仍需在已准备的环境中执行。
+- 将回执写入历史 `docs/validation/2026-09-11-pad-app-dev` 目录。新部署应先将工具参数化并改用忽略的 `.local/validation/`，不把生成目录提交。
+
+在这些限制处理前，不把该脚本列为新 checkout 的一键步骤。旧 prompt 和实验脚本也须先读源码，不能默认存在某个会话、模型或工作目录。部署、构建、系统安装、启动、程序自测与真实触摸应分别记录结果，不能用历史实验的结论替代本次验证。

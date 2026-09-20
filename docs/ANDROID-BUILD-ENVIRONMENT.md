@@ -92,7 +92,7 @@ npm test
 - 本机语音：ASR/VAD/对齐原生构建及其许可证，模型另行选装。
 - 同次构建生成的哈希、装配回执和自有签名。
 
-`rebuild-codex-shell.py` 是**已有完整构建的增量入口**，会读取 `artifacts/build-arm64-codex.json` 和旧 snapshot，不是新 checkout 的首次构建命令。不要伪造回执或复制维护者的签名来绕过检查。目前还没有把上述流程串成已验收的从零构建命令；此文档不作这一承诺。
+`rebuild-codex-shell.py` 是**已有完整构建的增量入口**，会读取 `artifacts/build-arm64-codex.json` 和旧 snapshot，不是新 checkout 的首次构建命令。不要伪造回执或复制维护者的签名来绕过检查。首次构建改用 [FIRST-DEPLOY.md](FIRST-DEPLOY.md) 的 `first-build.py`，按阶段从公开输入生成回执；这不表示用户账号、模型和设备内工具已经初始化。
 
 新 checkout 缺少私有 debug key 时由 AGP 生成自己的调试身份；它不能直接覆盖使用另一签名的已安装 DeepCode。发布签名应独立管理，不入 Git，也不通过卸载用户应用来绕过签名检查。
 
