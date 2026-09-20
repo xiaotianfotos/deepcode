@@ -1,0 +1,1 @@
+请实际调用工具，在当前工作区创建 android-e2e 目录，写入 sum_values.py，使用 Python 计算 [3,5,8,13] 的和并写入 result.json，JSON 包含 sum:29、verified:true、message:"安卓端到端测试通过"。运行这个脚本，再读取结果文件核对。不要只给代码，不要访问其他工作目录或网络。完成后回复 ANDROID_AGENT_E2E_OK sum=29。

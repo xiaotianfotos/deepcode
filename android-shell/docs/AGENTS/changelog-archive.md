@@ -4,8 +4,9 @@
 
 | 时间 | 版本 | 更新内容 | 更新者 |
 |---|---|---|---|
+| 2026-09-11 | local-pad-nest | 实际平板四会话分工：Qwen编写应用、GPT仅生成图标；源码/构建与图标留档，确认有效ADB与逐包安装弹窗是两层许可；实机安装验收推进中，未更新DeepCode本体。 | AI 开发助手 |
+| 2026-09-06 | 0.13.3 | **0.13.3 开发批落地（W1-W10）**：壳侧 EngineAuth（P0/P1）/MuxClient remote.mux/setTextZoom 退役/vc30；构建链 overlay+抽验门禁+pi-drift-F1+model-sync；ui-responsive 0.1.13（store-rehome 适配：client-store 内联 + slots-augment + RUNTIME_STORE_EXEMPTION 退役——rc.1 loader module table 不再应答 client-runtime require 的 boot 硬阻断修复）；host-web-compat 0.1.9（withResolvers + 引用文件按钮）；运行时补丁重出（SPJ/ATT rename 回退）与退役（fs-local/primitives）；AI 实测 read 工作目录外文件 PASS | AI 开发助手 |
 | 2026-09-05 | 0.13.2-fix | **Phase 3c OverlayService 职责拆分（纯搬移零行为变更，未提交）**：OverlayService.kt 1564→611 行（保留生命周期/三窗口 WindowManager 参数/拖动 clamp/吸边弹簧/探活与发送编排），新增四个同包顶层协作类（构造注入服务引用，无静态单例）：OverlayHalo.kt 79 行（Halo 顶层枚举 + 辉光 drawable/setHalo/syncHalo/deriveHalo 唯一权威）、OverlayPanel.kt 749 行（buildUnit 面板构建/updateBallOnly 渲染/状态模板/待答卡官方风格/POST /api/respond 应答；PendingApproval/PendingQuestion 顶层）、OverlayLiveFeed.kt 167 行（FileObserver .live.ndjson drainLive 四事件分发 + F7 android_* 自动化避让 + .overlay-test-pending debug 注入 + toolSummary）、OverlayTheme.kt 38 行（isDarkTheme/ThemeColors 色板）；服务以 internal 成员/委托入口（setHalo/deriveHalo/updateBallOnly 等）共享状态；**F7/F8/F9 行为与关键注释原样保留（F8 z 序约定注释留在 buildRoot 并在 OverlayHalo 抬头重申；MuxClient.kt 未动，其注释「OverlayService.handleMuxFrame」归属更新只落本文档）**；门禁 `:app:compileDebugKotlin --no-daemon` BUILD SUCCESSFUL；§4 OverlayService/MuxClient 行同步 | AI 开发助手 |
-| 2026-09-06 | 0.13.3 | **AGENTS 结构改造（用户拍板）**：主文件瘦身索引 + docs/AGENTS/ 详档（gotchas/modules/build-and-env/bridge-api/gpl-compliance/known-gaps/changelog-archive + Phase 4 五文档迁入）；grep 形式查询路由表；新坑 38-42 登记 | AI 开发助手 |
 | 2026-09-05 | 0.13.2-fix | **清理/统合/提速批 + ADB 可靠性批次（本地提交，GitHub 冻结中，push 待全量回归+用户批准）**：① scripts 双仓漂移收口（9 文件定权威双向同步：elf-check 双模式回灌修 build-release.ps1 单参断链、fix-shebang B 类 shebang 双应用防御、make-snapshot C3 修正、contract/licenses 同版）+ **修复幽灵缺陷：本仓 patch-marketplace.mjs 副本缺补丁 C/D（云端自包含构建产出缺补丁 APK）**，vendor 已应用并幂等验证；② Phase 2a 统一补丁框架 scripts/patches/（apply-patches.mjs + registry.json 12 补丁交叉校验 + data/compat-map.json，旧 patch-marketplace/patch-undo-mobile 删除，build-apk.mjs/ps1 门禁接入，反向去补丁重施加验证字节级恢复）；③ Phase 2b snapshot-config/ 数据模块（preinstall/seed/strip/slim/apt.conf.template/install-clang.sh，编排器数据外置 648→587 行）；④ Phase 2c 提速：inject-all.py 单 pass（与旧三步链等价性 EQUIVALENT 57749 成员零差异，preset1 下 4m52s→1m33s）+ build-apk.mjs 切单 pass + 归档 xz -T0 多线程（380s 级→47.5s）+ gradle.properties parallel/caching/configuration-cache 堆 4g；⑤ **ADB 可靠性批次**（真机网易云操控实测 docs/BUGS-open-2026-09-05-ADB-field-report.md）：manage 0.1.2（F1 语义树动画止血/F2 screenshot 物理分辨率+ui_click nx/ny 归一化/F4 devices 清单/F5 ADBKeyboard 优先+IME 自动引导还原+clear 原子清空/F10 dsh-tmp LRU+远端即用即删）+ bridge 0.1.3（F3 execAdbShell 远端前置 export PATH=/system/bin:/system/xbin 整体单引号转义/F4 resolveLivePort 型号校验+status deviceModel/F6 guidance 透出）+ 壳侧 F7 悬浮面板自动化避让（drainLive 识别 android_* tool_call 自动收起）/F8 光环 z 序修复（halo 窗先于 ball 窗 addView——同 overlay type 按 add 顺序定 z 序，旧顺序辉光盖住球面=整球变红，z 序约定固化）/F9 划掉后台=完整关闭（用户拍板：onTaskRemoved 撤悬浮球+requestShutdown+stopSelf，START_STICKY 重投递 userShutdown 门拦截）/F3 AdbState 同款 PATH 前置；⑥ 双仓脚本同版铁律履行（build-apk-013.ps1 根自检测版）。待办：Phase 3 MainActivity/OverlayService 拆分、apk 仓 docs 五文档、双模拟器全量回归 | AI 开发助手 |
 | 2026-09-05 | 0.13.2 | **v0.13.2 正式发布收官（用户批准，横屏回归通过后）**：横屏 16384 终包回归全过（闸门二次验证解压 7 分钟零抢跑 / A pending 持久 / B 发送即忙+自动建会话+45s 兜底回退 / D 吸边同心 d1.5 密度双缘验证 / 面板左翻；C turn_start 无 key 不可独立复现、竖屏已实考）；主分支 Gate 绿（e251257 success，无开放 PR 直落 main）；发布构建 -ExportSnapshots 双快照一致性门禁双 PASS；15 资产上传（bridge 0.1.2 / ui-responsive 0.1.12 / host-web-compat 0.1.8 重新 pack，其余复用 preview 资产）；draft 转正式 tag v0.13.2 落 main prerelease=false；npm pack 坑：--pack-destination 相对路径按 npm cwd 解析需绝对路径；§1 版本状态更新 | AI 开发助手 |
 | 2026-09-05 | 0.13.2-fix | **悬浮球三连修 + 快照刷新闸门（用户实测回归三问题全修 + 升级排障实锤坑 37；坑 36 编号不变）**：#1 收起态球不变黄（必须展开才见琥珀）→ probeEngine 每 10s 自带判定直接 setHalo 把 PENDING 琥珀盖回白——抽 deriveHalo() 唯一权威（ERROR>PENDING>WORKING>IDLE）探活与 updateBallOnly 共用（截帧实证：t+2s 琥珀 t+16s 被打白→修后 t+26s 持久）；#2 发送后模型起轮前面板显「空闲」→ live 流无起轮事件壳侧失聪——markBusyOptimistic 乐观置忙（发送成功/应答提交即亮工作态，45s 无 live 事件探活兜底回退）+ **bridge 插件 0.1.2**（npm version bump + build + robocopy 已同步 apk 仓副本）新增 turn_start 行（上游 turn/start 事件在产），drainLive 消费——WebView 侧发送/提问续跑/无工具轮全覆盖（实测：面板收起纯 WebView 发送 t+1s 球即蓝、纯文本轮排除 tool_call 驱动）；#3 吸边后球/光环中心错位 14px → 光环窗 64dp 贴边越界 7dp 被 WMS 整窗平移（dumpsys 实锤请求 x=-14→frame x=0）→ 光环窗缩 50dp（=2×(margin 8dp+球半径 17dp)）贴边恰内切屏（修后 dumpsys 两窗中心同为 50,567）；#4 快照刷新期看门狗拉引擎（坑 37：模拟器解压实测 ~8 分钟，中途 force-stop → 半解压运行时引擎剪掉用户 llm-pi-ai.providers/Hy3 配置，已从 undo savepoint 124343 恢复）→ EngineManager.snapshotRefreshing companion 级 @Volatile 闸门刷新期 startEngine 跳过；回归四项全 PASS（pending 持久/发送即忙/turn_start/吸边同心，详见协调仓 docs/HANDOVER-overlay-v21-20260904.md §九）；§4 OverlayService/EngineManager 行与坑 37 同步 | AI 开发助手 |
@@ -31,3 +32,51 @@
 | 2026-08-30 | 0.13.1 | **文档结构化增补**：坑 30-32 登记（assets ABI 残留/linker64 孤儿 force-stop 杀不死/forward 静默失效——与协调仓雷点 14-16 同源）；标题 AGENT.md→AGENTS.md 对齐文件名；产物路径硬编码 v0.13.0 → v<版本> 占位（产物命名已由 ps1 从 gradle 单一来源读取）；§1 补版本状态与开放跟踪行 | AI 开发助手 |
 | 2026-08-31 | 0.13.2 | **插件构建产物收口（chore, 348011c）**：.gitignore 补 `plugins/*/lib/`、`plugins/*/node_modules/`、`plugins/*/cbin_*`（本地/云端 npm 构建产物不入库）并清理存量 untracked 产物；ci/pr61-fix 孤儿分支（无 PR）与已合并 PR 的旧分支保留未动 | AI 开发助手 |
 | 2026-08-31 | 0.13.2-preview | **0.13.2-preview 功能批（versionCode 28 + versionName 0.13.2-preview；未发布，待用户指示）**：W6 内嵌 ADBKeyboard 协议 IME（AdbKeyboardService/Receiver，dcfd573）+ manage 语义工具双写（1bb0cc7）+ 门禁 settings.yaml 内容级修正（5d9988b）+ W7 悬浮球全套（OverlayService/OverlayController + live 流 + 开关，d76dc41/56c96b7）+ **preview 修正批（ae8a78d）**——面板跟随球（repositionPanel）、引擎页避让帧（emitFrame/replayFrame + frameConsumer 先于 ensureStarted 注册 + onPageFinished 补放 + instance/onDestroy 注销）、贴边容差 20dp；设备实测：避让 124px 注入/拖动清零/面板跟随；§4 文件表补 OverlayService/AdbKeyboardService 两行；preview 发布/PR 模板三要点见协调仓 AGENTS.md §4 | AI 开发助手 |
+
+| 2026-09-06 | 0.13.3 | **AGENTS 结构改造（用户拍板）**：主文件瘦身索引 + docs/AGENTS/ 详档（gotchas/modules/build-and-env/bridge-api/gpl-compliance/known-gaps/changelog-archive + Phase 4 五文档迁入）；grep 形式查询路由表；新坑 38-42 登记 | AI 开发助手 |
+
+| 2026-09-08 | 0.13.3 | **运行时替换事务化 + 解压面两处实锤修复（接续 HANDOVER-0.13.3-ISSUES-PERF）**：① `SnapshotTransaction.kt`（新）——`refreshSnapshot` 改为「暂存解压 → 原子交换 → 指纹提交」，标记 `.snapshot-transaction`（STAGED/SWAPPING/SWAPPED + moved 记账）；**用户数据从不移动/复制/删除**（旧 backup/restore 语义退役，`.dsh-backup` 仅作 ≤0.13.2 遗留一次性补写）；`recoverInterruptedRefresh()` 每次启动解析中断事务（前滚/回滚/丢弃）；② `SnapshotFs.kt`（新）NOFOLLOW 原语；③ `SnapshotExtractor` 新增 `runtimeRoot` 参数——放行指向 `files/usr/...` 的绝对符号链接（坑 45，否则暂存解压静默丢 9 条 applet 链），Termux 残留/`../` 逃逸仍拒；④ 权限归一化改在 `inject-all.py` 重打包层（坑 44：WSL 9p chmod 无效）；⑤ 看门狗 ProbeState/UndoGate 单飞/onDestroy 不杀引擎/engine.log 尾部读取（前轮未提交改动）；⑥ 单测 16 项（事务 9 + 解压策略 1 + 用户数据 5 + 文件模式 1）；manage 0.1.3（ui-tree 祖先回退修公开 id/原路径混用，3 项回归） | AI 开发助手 |
+
+| 2026-09-08 | local-fs-adapter | 新增 dsh-android-fs 插件，标准 write 原子新建适配；Ubuntu/Android 各10项保护测试及模型四工具链路通过；双 ABI 包就绪。 | AI 开发助手 |
+
+| 2026-09-08 | local-storage | 新增已挂载共享/外置卷解析及读写预检，修复权限返回重复选择；共享 FUSE 独占创建策略和存储验收。 | AI 开发助手 |
+
+| 2026-09-09 | local-debian | Debian/proot 插件开发：标准工具链委托、安全解包/重建、原生 loader 打包、DNS 导出与环境数据保留；20 项 JVM、14 项 APK 文件系统保护测试及 Debian Agent/生命周期验收通过，双 ABI 预览就绪；详见 DEBIAN-MILESTONE。 | AI 开发助手 |
+
+| 2026-09-09 | pad9-validation | Pad 9 Pro Max 实机部署与 Debian/媒体/原生编译通过；默认省电冻结 UID，改为无限制后 62 秒后台和正常取消通过；实机脚本与报告归档。 | AI 开发助手 |
+
+| 2026-09-09 | local-voice-debug | 新增独立语音输入与性能浮层插件、原生录音/模型生命周期桥、应用 UID CPU 指标；默认 0.6B，实机麦克风/文件卡片保留/生命周期通过；23 项 JVM、6 项插件测试与 6 门禁通过。 | AI 开发助手 |
+
+| 2026-09-09 | local-voice-vad | Homerail 三曲线、52px 输入框同宽上沿波形、WebRTC VAD 5 秒端点及静音裁剪、完成/取消；删除 CPU 采样；Ctrl +/-/0 接入内容字号设置。 | AI 开发助手 |
+
+| 2026-09-09 | local-ps5-deck | 可选手柄/单麦工作台、标准会话作用域与独立草稿；布局为每屏双列横滑、左侧单列，L2 收放；恢复原版样式、移除顶部状态标签、切换光标到草稿末尾；新增 ○ 发送、菜单裁剪修复、聊天区横滑方向分流及释放速度惯性，APK 安装及定向实机回归通过（见里程碑）。 | AI 开发助手 |
+
+| 2026-09-10 | local-fold | 折叠原生过渡桥与插件开关、AppFrame 组件连续性、Deck 窄屏单列、独立 x86_64 UI 构建及可复现双屏模拟配置；验收记录见折叠里程碑。 | AI 开发助手 |
+
+| 2026-09-10 | local-codex | Codex App Server Android launcher、账号/浏览器登录插件、Relay 原生会话适配与独立构建；真机浏览器登录、GPT-6、原生工具、恢复/取消、工作台/手柄回归通过，权限边界见里程碑；Codex 配置归入插件列表，账号邮箱脱敏。 | AI 开发助手 |
+
+
+### 2026-09-11 索引滚入（ForcedAligner 原型）
+
+| 时间 | 版本 | 更新内容 | 更新者 |
+|---|---|---|---|
+| 2026-09-11 | local-device-docs | 增加仓库根入口及设备连接详档；记录动态 mDNS、双端 ADB 身份、安全更新、现版双屏边界与 Codex 输入图片缓存/预览回归。 | AI 开发助手 |
+
+
+### 2026-09-11 媒体技能部署索引滚入
+
+| 时间 | 版本 | 更新内容 | 更新者 |
+|---|---|---|---|
+| 2026-09-11 | local-perspective | 完成教程；透视改为受限位移；真实 state 5 全程保持对照获“不黑”反馈，集成前台租约与单 WebView 窗口交接；修复断点切换触发抽屉/底部面板飞出，已部署，输入/开合验收中；恢复 ADB 动态端口。 | AI 开发助手 |
+
+| 2026-09-11 | local-input-fixes | 按输入来源抑制触屏残留悬浮提示；移除工作台重复工具栏和常驻按键说明；Deck纳入版本守卫补丁；补充图片/语音定向会话修复及实机回归；追补原生指令菜单回调归属、隐藏重复会话标题、物理键盘条件聚焦；修复宽屏软键盘的整页上移；追加Fold工作台抽屉导航、整屏等宽泳道/右半幅对应和隐藏横向滚动条；追加端点显露前泳道握手、完全展开解除方向锁，后续按用户授权微调模糊过渡带和清晰端点；添加原生界面选字边界，保留聊天正文和输入框选字、Deck选区手势避让。 | AI 开发助手 |
+
+| 2026-09-11 | local-forced-aligner | O3 一分钟口播 ASR/ForcedAligner 四组合实测；修复 Mali IGPU 选择并验证实际 GPU 算子；共享时间戳/SRT 与工具接入设计。独立原型，APK 未修改。 | AI 开发助手 |
+
+| 2026-09-11 | local-fold-media | Fold 安装 HyperFrames/Chromium 与独立对齐模型，APK打包CPU/Vulkan对齐器；部署两个Codex原生skill，实际应用域转录/时间戳/SRT与媒体工具验收通过。 | AI 开发助手 |
+
+| 2026-09-11 | local-model-catalog | 模型菜单配置过滤；修复缺失Cordis注入导致全部模型不可用，6项目录回归与手机6个GPT模型展示通过；设置恢复左右布局和可触达关闭按钮，接入AndroidX返回。 | AI 开发助手 |
+
+| 2026-09-11 | local-phone-app-lab | 手机内Codex编写原生App，两轮Debian构建签名和本机ADB安装/覆盖、截图、自测通过；未更新DeepCode本体。 | AI 开发助手 |
+
+| 2026-09-11 | local-pad-app-dev | 平板配对本机ADB、安装Java打包工具和安卓开发Skill；实际Codex生图/打包构建通过，安装等待系统允许。 | AI 开发助手 |

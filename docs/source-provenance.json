@@ -1,0 +1,17 @@
+{
+  "android_shell": {
+    "url": "https://github.com/kelai141/dsh-mobile-apk",
+    "tag": "v0.14.0-preview",
+    "commit": "c7746e89d38462bd695ca3d72c8874dc5278958d",
+    "path": "android-shell",
+    "import": "vendored source; upstream licenses retained",
+    "previous_import_commit": "4e721c8814f3b1163ce21e6ce77a2e7ae87a93fc",
+    "import_method": "file-wise three-way integration against previous import; downstream overlays retained; separate experimental branch"
+  },
+  "official_reference": {
+    "url": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "commit": "c389f96bf3a9b6807cb71ed6bdad5849be0df6d8",
+    "path": "upstream",
+    "tracked": false
+  }
+}

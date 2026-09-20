@@ -2,6 +2,18 @@
 
 > grep 用法：`grep -n "门禁\|Fast\|abi" docs/AGENTS/build-and-env.md`。
 
+## Ubuntu 文件系统适配构建（2026-09-08）
+
+在父项目运行 `python scripts/overlay-fs-adapter.py <ABI>`，然后 `python scripts/build-baseline.py <ABI> --fs-adapter`。只向已校验发行快照注入 dsh-android-fs 及 Web composition，不重建 Node/Termux、不注入其他插件的本地编译产物。xz 解码/编码各 4 线程、两个 ABI 可并行生成快照；共享 Gradle assets 的 APK 构建必须顺序。输出标签 local-fs-adapter，与历史 local-baseline 分开。
+
+## Ubuntu 本地基线（2026-09-08）
+
+本地复现入口在父目录 `scripts/env.sh`、`scripts/build-baseline.py`。先复用并校验 v0.13.3 发布快照，再从源码构建壳；这不等于自行重建 Termux/Node 快照。构建记录位于父目录 `artifacts/` 与 `logs/`。
+
+插件通过 `npm ci --legacy-peer-deps` 使用已提交锁文件；部分 peer 仍声明旧版 client-runtime，不能用普通 npm 自动解析成另一棵树。使用 `npm_config_cache` 覆盖 UI 插件 `.npmrc` 中的 Windows 路径。UI 的构建和测试仍必须实际通过，忽略 peer 解析并不证明运行时兼容。
+
+bridge 的 `session/event` 监听在干净安装时缺少事件声明，导致 TS2345。添加与其现有开发依赖配套的 `@deepseek-ai/dsh-session@0.1.1-rc.2` devDependency，并通过 type-only import 加载声明合并；不增加运行时 import，不修改事件处理逻辑。此次构建基线仍使用发布快照里的插件，重新构建的插件未注入基线 APK。
+
 # AGENTS.md — dsh-mobile-apk 开发地图
 
 > **AI 主动更新条款（必须最先执行）**：本文件面向人类与 AI 开发助手，是唯一权威的仓库开发地图。**任何代码变更导致本文件描述失真（文件作用、函数签名、桥协议、构建命令、关键实现落点）时，AI 必须在本轮同步更新本文件，并在文末「更新记录表」登记（时间 + 版本号）。** 变更未触及本文件描述范围时无需更新（避免无意义改写）。若发现本文件与源码不一致，以源码为准并当场修正本文件——不要忽略。
@@ -19,7 +31,7 @@
 - **依赖**：androidx.activity-ktx / core-ktx、commons-compress、xz；Shizuku 零依赖反射（ShizukuSupport.kt，仅探活示例）。
 - **兄弟仓库**（协调仓库下的子目录）：`dsh-shell-termux`（Termux 执行器）、`dsh-client-ui-responsive`（移动 UI 注入层 + F5 消费端）、`dsh-host-web-compat`（页面注入/兼容）、`plugins/`（dsh-android-bridge / -manage / -linux-env / -file-open，协调仓库内）、`vendor/`（dshmarketplace-plugin、dsh-undo-savepoint 固化副本 + PATCHES.md）。
 - **上游** `deepseek-ai/deepseek-harness`（本地 checkout `dsh/`）：只读参考，**零改动**；一切适配以补丁层/插件/壳侧实现。
-- **版本状态**：**0.13.3 开发中（vc30；引擎 0.1.2-rc.1 overlay + /api 浏览器鉴权 EngineAuth（P0 token 交换/P1 自 mint cookie）+ MuxClient /api/remote.mux $events 流重做 + pi-drift-F1 降级补丁 + withResolvers polyfill（host-web-compat 0.1.9）+ 字体滑杆退役（ui-responsive 0.1.13）+ vendor/dsh-model-sync；W1-W8 代码面全绿，回归与 push/PR 待用户口令）**。0.13.2 已发布**（Release v0.13.2 正式版，versionCode 29，2026-09-05，tag 落 main，15 资产，prerelease=false；详见更新记录表与协调仓 AGENTS.md §1）。0.13.2-preview（28）与 0.13.1（27）被其取代。**0.13.2 含悬浮球 v2.1 全套 + 用户实测三连修（deriveHalo/乐观置忙+bridge 0.1.2 turn_start/吸边同心）+ 快照刷新看门狗闸门（坑 37）**（#118 引擎启动/探活/UndoGate 五项 + 悬浮球 v2 重设计 + v2.1 三窗口/待答卡片/状态模板批 + 设置页全屏（ui-responsive 0.1.12）+ #120 工作区，详见更新记录表）。当前开放跟踪：#115（市场 Phase2，目标 0.13.2）、#120（添加工作区按键不可用——修复批已实施，待发版验证）、#108（数据备份 feature）。
+- **历史版本状态（当前以 AGENTS.md 与上游集成文档为准）**：**0.13.3 开发中（vc30；引擎 0.1.2-rc.1 overlay + /api 浏览器鉴权 EngineAuth（P0 token 交换/P1 自 mint cookie）+ MuxClient /api/remote.mux $events 流重做 + pi-drift-F1 降级补丁 + withResolvers polyfill（host-web-compat 0.1.9）+ 字体滑杆退役（ui-responsive 0.1.13）+ vendor/dsh-model-sync；W1-W8 代码面全绿，回归与 push/PR 待用户口令）**。0.13.2 已发布**（Release v0.13.2 正式版，versionCode 29，2026-09-05，tag 落 main，15 资产，prerelease=false；详见更新记录表与协调仓 AGENTS.md §1）。0.13.2-preview（28）与 0.13.1（27）被其取代。**0.13.2 含悬浮球 v2.1 全套 + 用户实测三连修（deriveHalo/乐观置忙+bridge 0.1.2 turn_start/吸边同心）+ 快照刷新看门狗闸门（坑 37）**（#118 引擎启动/探活/UndoGate 五项 + 悬浮球 v2 重设计 + v2.1 三窗口/待答卡片/状态模板批 + 设置页全屏（ui-responsive 0.1.12）+ #120 工作区，详见更新记录表）。当前开放跟踪：#115（市场 Phase2，目标 0.13.2）、#120（添加工作区按键不可用——修复批已实施，待发版验证）、#108（数据备份 feature）。
 - **环境无关声明**：本文档适用于任意环境（Windows/WSL/Linux/macOS、有/无真机）开发维护者；环境差异点（WSL、ADB 真机、run-as）已在对应章节标注。
 
 ## 2. 构建与验证命令
@@ -106,3 +118,38 @@ cd ..\plugins\dsh-android-<pkg> && npm run build
 | run-as 限制 | run-as 裸环境无 termux-exec 钩子 → `not executable: 64-bit ELF` / `CANNOT LINK` 是**假错误**；验证快照内二进制须带全套引擎 env（`LD_PRELOAD` + `TERMUX_EXEC__*` + `LD_LIBRARY_PATH` + `OPENSSL_CONF`） | 坑 22 |
 | PowerShell 转义 | 双引号内 `$var` 本地展开（引号地狱）；二进制经 `adb exec-out`/push 传输 | 坑 8 |
 | ABI 匹配 | debug 包默认 x86_64 快照，装 arm64 真机必崩；构建/安装前核对（3.2 步 4） | 坑 18 |
+
+## Ubuntu 共享存储候选版（2026-09-08）
+
+根仓库 `overlay-fs-adapter.py ABI --storage` 注入 fs 插件和 host-web-compat 存储桥；`build-baseline.py ABI --storage` 生成独立 local-storage APK，保留原候选包。两个 ABI 的 overlay 可并行，APK 构建仍串行。存储设计及实测见根仓库 docs/STORAGE.md；私有策略和共享策略具有不同原子性保证。
+
+### Ubuntu 语音/性能预览构建
+
+先在两个 `plugins/dsh-android-{voice-input,performance}` 目录执行 `npm ci --legacy-peer-deps`、`npm test`。本地根运行 `source scripts/env.sh`；已有 Debian bundle 后执行 `python3 scripts/overlay-fs-adapter.py arm64 --voice-debug`、`python3 scripts/build-baseline.py arm64 --voice-debug`。ASR 引擎须先经 `scripts/build-asr-lab.py` 构建，打包时校验 receipt 中 SHA 和 16KiB ELF 对齐，附许可证。预览只支持 ARM64；模型独立存在平板共享 work/models/qwen3-asr，不塞入 APK。
+
+voice-debug 还需先构建 `dsh-client-ui-responsive`（字号快捷键）；overlay 会替换其本仓产物。构建脚本自动执行 `scripts/build-voice-vad.py`，固定 libfvad 532ab666c20d3cfda38bca63abbb0f152706c369，NDK ARM64/API26/16KiB 对齐，打包 libdsh_vad.so 与 LICENSE/PATENTS/AUTHORS。独立收据 artifacts/voice-vad-build.json。
+
+### 工作台补丁（2026-09-09）
+
+voice-debug overlay 额外装配 dsh-client-input-gamepad 与 dsh-client-ui-voice-deck；运行 scripts/patch-voice-deck.py 从已验证发布快照生成 runtime/renderer/conversation/workspace bundle。脚本检查原文锚点次数并保存前后 SHA，漂移则失败。三个输入相关插件须各自 npm ci && npm test；原导入 Deck 已存档，不依赖 workspace:^ 或缺失 voice-asr。
+
+### 折叠 UI 验收（Ubuntu，2026-09-10）
+先构建 responsive、voice-deck、fold-transition 插件。`overlay-fs-adapter.py x86_64 --deck-ui` + `build-baseline.py x86_64 --deck-ui` 打入当前 UI/插件与 Debian，原生本地 ASR 仍仅 ARM64 voice-debug；不能拿 x86 性能代替玄戒。两 ABI 的 Gradle 构建必须串行（共用 assets/jniLibs），最终交付以 APK 内快照摘要和安装后 fingerprint 为准。
+
+### 本地 Codex ARM64 构建
+
+上下文隔离补丁从固定快照生成；图片目录同步修复同时存在于
+`app/src/main/assets/patched/attachment-local-index.js` 启动资产。后者会在每次启动
+覆盖运行时模块，因此改附件实现时不能只改 snapshot。装机验收
+`scripts/verify-codex-release.py` 会对照 APK asset 和设备文件字节。
+
+根目录 `scripts/overlay-fs-adapter.py arm64 --codex` 与 `scripts/build-baseline.py arm64 --codex` 保留 voice-debug 能力并嵌入 Codex。原生 runtime tarball 按插件 runtime-lock.json 校验，NDK 27.2 编译两个 launcher。产物为独立 local-codex，勿用其他 ABI 覆盖；仍须串行构建。
+
+### 保留快照的 responsive client 更新（2026-09-11）
+
+`source scripts/env.sh && python3 scripts/rebuild-codex-shell.py` 会先构建响应式插件，将 lib/client.js 打入 assets/patched/responsive-client.js，再构建 ARM64 壳；收据记录 responsive_client_patch_sha256 并抽验 APK 内资产一致。引擎启动前只对固定包名、版本 0.1.13、基线 SHA 99b6daf… 或 runtime-patches 中记录的上次受管 SHA 原子更新。不覆盖未知内容或新版本；snapshot 指纹不变，无需重解压。升级后同时验证实际运行文件和页面逻辑，不能仅查 APK 资产。
+
+
+## 2026-09-12 正式CPU语音引擎
+
+Ubuntu从仓库根`source scripts/env.sh`，先`python3 scripts/build-voice-engine.py`，再`python3 scripts/rebuild-codex-shell.py`。前者校验固定llama.cpp/KleidiAI、构建优化CPU和复用已验证兼容基线，产出artifacts/voice-engine.json；后者stage-only逐个核对ELF和许可证SHA并写入APK收据。初次缺兼容基线应运行scripts/build-asr-lab.py；该lab明确关闭KleidiAI，不能拿lab APK覆盖当前DeepCode。完整build-baseline.py也已接入正式语音入口。两个ELF均在APK nativeLibraryDir，保持16KiB段对齐和现有snapshot。

@@ -1,0 +1,7 @@
+你现在运行在小米平板 DeepCode 的 Codex 中。用户已授权配置本机安卓开发、ADB与开发skill，也希望你知道可以用imagegen生成应用图标。
+先完成工具链安装与能力检查。请读取你可用的 android-app-dev skill。不要操作手机/电脑或其他用户项目，不要修改账号/模型设置，不要覆盖DeepCode自身。
+新的skill位于 /data/user/0/com.dsharnessmobile.shell/files/home/.dsh/codex-android/home/skills/android-app-dev 。先运行 scripts/app.py doctor（用宿主python）。实际Debian执行helper是该目录scripts/device_runtime.py的debian(workspace,argv,timeout=...)函数，可用宿主python导入调用。
+使用该函数，workspace=/data/user/0/com.dsharnessmobile.shell/files/home/.dsh/android-app-lab/bootstrap，argv=['bash','/workspace/install-toolchain.sh']，timeout=1200。安装日志写当前项目setup.log。工具已上传但依赖尚需apt安装，这是用户明确授权的任务；遇到普通构建环境问题自行排查修正并继续，不要改用远程电脑构建。
+安装后检查java/javac/aapt/apksigner、python3的PIL是否可用，并保存版本到toolchain.log。
+再读取现有 .system/imagegen/SKILL.md，检查当前你是否有内置图像生成工具（含工具发现工具），只报告实际找到的工具名或缺失。此阶段不需要生图，不要要求API key或自行启用CLI生图。
+结束时报告ADB实际连接状态、工具链安装成功与否和内置生图入口；不要输出ADB私钥、账号凭据或环境全集。

@@ -15,7 +15,7 @@
 | DownloadSaver.kt | 244 | 引擎源下载落盘（exports 优先/MediaStore 回退）+ 外链系统浏览器打开 | MainActivity、DebugLogExporter |
 | WebUiChrome.kt | 178 | 窗口 UI chrome：沉浸式/textZoom/剪贴板/常亮/主题推送 | MainActivity |
 | FileIncoming.kt | 279 | 外部来件（VIEW/SEND）校验净化→临时工作区→通知引擎；TTL 清扫 | MainActivity、EngineService |
-| AndroidBridge.kt | 264 | 全部 @JavascriptInterface 桥（window.androidBridge，35 方法；0.14.0-preview 实测计数，0.13.x 文档写 31 已失真）+ resolvePickedPath | MainActivity（addJavascriptInterface 唯一注册点 :394） |
+| AndroidBridge.kt | 241 | 全部 @JavascriptInterface 桥（window.androidBridge，31 方法）；目录解析迁至 WorkspaceStorage.kt | MainActivity（addJavascriptInterface 唯一注册点 :394） |
 
 注入方向：MainActivity 字段初始化阶段 `by lazy`/直接构造各协作类并传 `this`（如 `engineFlow = EngineStartFlow(this)`，MainActivity.kt:64-76）；ActivityResult 注册必须在 STARTED 前，故 dirPickerController/mediaPickerController 为字段直接构造（MainActivity.kt:71-74）。协作类只回调 MainActivity 的 internal 方法（如 `activity.applyGuidePhase`），不持有彼此。
 
@@ -87,18 +87,4 @@
 
 权限 12 项（INTERNET / MANAGE_EXTERNAL_STORAGE / READ_EXTERNAL_STORAGE maxSdk32 / WRITE_EXTERNAL_STORAGE maxSdk29 / POST_NOTIFICATIONS / FOREGROUND_SERVICE(+DATA_SYNC) / RECEIVE_BOOT_COMPLETED / WAKE_LOCK / REQUEST_IGNORE_BATTERY_OPTIMIZATIONS / QUERY_ALL_PACKAGES / SYSTEM_ALERT_WINDOW），逐条理由见 AndroidManifest.xml 注释。
 
-## 0.13.5 设备控制面（双通道）
-
-```
-AI 工具（dsh-android-manage）
-   └─ androidPrivilege.gateFor(session)   ← 会话档位 danger-full-access 恒需
-        ├─ 无障碍通道在线（prefs a11yEnabled + 队列心跳 <20s）
-        └─ 或 ADB 三道人门齐备（完全访问 + 允许访问 + 配对）
-   └─ ControlPolicy.decideControl(op)     ← 后端选择（a11y 优先，ADB 回退，fail-closed）
-        ├─ a11y → ControlQueue（引擎侧 exact 路由 /api/android/ui/{pending,result}，共享令牌）
-        │        ↕ 长轮询（壳侧 ControlPoller，空闲 5s/有活即时，轮询即心跳）
-        │        DeviceControlService（AccessibilityService：树快照 + performAction + takeScreenshot）
-        └─ adb  → execAdbLine/execAdbShell（shell 执行、原图截图、pm/dumpsys 等系统面）
-```
-
-两条通道**等价且无障碍优先**（PRD-0.13.2 §3.3 B3）；授权面在设置页「设备控制授权」：无障碍为主入口，ADB 折叠为高级/脚本面。
+共享/外置卷接入：WorkspaceStorage.kt / WorkspacePaths 查询已挂载卷、校验本地提供方和路径、读写探测；DirectoryPickerController 管理权限及选择器续启。详见根仓库 docs/STORAGE.md。

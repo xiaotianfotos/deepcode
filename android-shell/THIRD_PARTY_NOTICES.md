@@ -103,3 +103,13 @@
 |---|---|---|---|
 | @napi-rs/canvas | 1.0.8 | MIT | [Brooooooklyn/canvas](https://github.com/Brooooooklyn/canvas) |
 | @napi-rs/canvas-android-arm64 | 1.0.8 | MIT | [Brooooooklyn/canvas](https://github.com/Brooooooklyn/canvas)（napi android-arm64 预编译 binding） |
+
+## 本地 Android 文件系统适配
+
+`@dsh-android/dsh-android-fs` 0.1.0 采用 MIT 许可，许可随插件一起进入快照。复用现有 Python/ctypes 与 Harness 文件系统包，不增加二进制依赖。
+
+### Native GPT Live audio
+
+The GPT Live experiment uses `io.github.webrtc-sdk:android:150.7871.01` for native WebRTC audio. The SDK packaging license and upstream WebRTC notices are bundled as `licenses/webrtc-sdk-LICENSE.txt` and `licenses/webrtc-NOTICES.md` (trailing whitespace normalized only).
+
+The Codex Live protocol configuration was studied in [HomeRail](https://github.com/xiaotianfotos/homerail), particularly `homerail_manager/src/server/codex-live-voice-runtime.ts` and `agent-ui/src/agent/codex-live-voice-client.ts`. DeepCode implements its own native transport and retains its own Codex session binding.

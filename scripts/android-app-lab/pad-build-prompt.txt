@@ -1,0 +1,7 @@
+现在请使用刚安装的 android-app-dev skill 在当前平板完成一个安卓App从创作到安装检查的实际闭环。当前项目 /storage/emulated/0/work/pad-app-lab，包名 com.deepcode.padlab.counter，应用名“平板开发实验”。不要修改其他项目或DeepCode本体。
+你亲自编写原生Java Activity和Manifest，minSdk26/target34/versionCode1。做一个适合平板、简洁漂亮的计数器：标题“平板自己造的 App”、副标题“写代码 · 编译 · 安装 · 调试，都在这台平板”，大计数、明显的+1和归零按钮；初值0，布局留白舒适，无网络权限。为可验证性，在+1监听器输出Log.i("AndroidAppDev","COUNT="+count)。self_test布尔intent启用时，通过同一按钮performClick三次、断言3并记录SELF_TEST_PASS count=3；默认不自测。
+使用现有imagegen skill和你实际可用的内置生图工具，生成一张真正用于这个App的图标：方形，独立居中的小型创意工作站/平板与一个发光加号，薄荷青与深蓝，细腻但轮廓清楚，不要文字或品牌，优先透明前景。先查看生图结果，将实际产物保存在项目assets/icon.png，并保留prompt文本。若内置生图确实不可用，明确报告，不擅自使用API/CLI或假称生图成功；其他应用开发验证继续完成。
+如成功得到图标，使用skill的icons.py打包传统与自适应图标，在Manifest中引用@mipmap/ic_launcher，并在App界面显示这个图标作资源验证。资源使用R类正常引用，build脚本会生成R.java。
+只使用平板本机Debian构建，使用skill app.py build/install/launch/capture/logs，不让电脑替代构建或安装。保存build.log、adb.log。先launch --self-test，检查SELF_TEST_PASS与截图。
+再尝试一次真实ADB点击+1：通过截图/界面树确认按钮中心坐标，用app.py tap点击，检查COUNT=4并再截图。如果系统拒绝INJECT_EVENTS，记录真实错误，保留程序自测结果，不伪称真实触摸通过。系统安装若有确认限制，报告并等待，不能绕过。
+完成后通过return回到DeepCode，说明实际源码、图标、APK路径、构建耗时、安装/自测/ADB点击分别是否通过。不需要自行扩展功能或重复大量测试。

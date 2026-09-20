@@ -48,11 +48,9 @@
 40. **npm arborist 对复杂 peer 树 + 精确 pin 会崩（spec undefined）**：ui-responsive 升 cordis 4.0.2 + client-store rc.1 后，npm install 带包参数崩（Cannot read properties of undefined (reading 'spec')）；且半装 node_modules 会让 "up to date" 谎报。**处置**：删 node_modules + package-lock 全新 install --legacy-peer-deps；peer cordis 从精确 4.0.1 放宽到 ^4.0.2；装完必须回读 node_modules/<pkg>/package.json 验证版本（npm "up to date" 不代表真装）。grep `legacy-peer-deps`。
 41. **overlay 登记表漏项（primitives 缺席 rc.1 升级）**：engine-overlay.json 生成以 research 的 196 包清单为主循环——@deepseek-ai/dsh-client-ui-primitives 在旧树但不在清单 → 未覆盖留在 rc.2。**修复/约定**：登记表必须与基座树全量对账（.tmp-upgrade/audit-manifest.mjs：base-nm-paths 逐包 vs manifest ∪ keepUnpublished，未覆盖即查 npm）；发现 npm 有新版即补登记+拉 tgz。grep `audit-manifest`。
 42. **run-as 的权限视图不代表引擎运行时**（Android 15 模拟器实测）：appops MANAGE_EXTERNAL_STORAGE allow 后 run-as cat /storage/emulated/0 仍 Permission denied（run-as/FUSE 评估差异）——引擎进程（同 uid 真实运行）实测可读（AI 轮 read 工具逐字读回）。验证权限问题必须走引擎运行时（会话轮/工具），不能只信 run-as。grep `run-as`。
-43. **AppFrame 白屏静默挂起：create 循环 + rc.1 session-scope 严格绑定（0.13.3，两轮定位，已修）**：
-（原以「坑 43 修复记录」附录形态追加，2026-09-12 归位为编号条目，正文未改。）
+# 坑 43 修复记录（追加 gotchas.md）
 
-**第二轮定位（原「43 续」）：白屏静默挂起的真因与修复**：
-
+## 43 续：白屏静默挂起的真因与修复（第二轮定位）
 
 首轮定位到「create 循环静默挂起」后，用 **Runtime.enable + dist 插桩**（设备侧 python 给 index-Df-65__b.js 的 boot await 链插 console.log）拿到完整时序：**50 个 entries 全部 created、r5-pluginboot-done、mount-effect、r6-mounted 全部触达——boot 管线本身是通的**。真因在 mount 后的 **React 渲染错误**：`Error: strict session slot 'details' rendered without a scope binding`（console error，0.13.2 时代无此强制）。
 
@@ -71,217 +69,181 @@
 44. **WSL 9p 挂载 chmod 无效 → 归档权限归一化只能在重打包层做（2026-09-08 实测）**：`/mnt/d` 是 9p 挂载且未启用 metadata，`chmod 600` 后 `stat` 仍 777、`tar -tvf` 记录 777（实测探针目录）。因此「归档前 chmod 整棵树」在 Windows 侧是**无效步骤**（白走 6 万文件），快照 tar 的权限只能靠**流式重打包**修正——唯一权威落点 = `scripts/inject-all.py`（重写每个成员：ELF/shebang=0700、数据文件=0600、目录=0700），门禁 `scripts/check-snapshot-file-modes.mjs` 校验注入后快照（= APK 内嵌 + 发布资产同源）。`build-snapshot-013.mjs` 8a3 步已删除并注明原因；`build-apk-013.ps1` 的 `-SkipInject` dev 档跳过该门禁（警告不拒打包）。grep `check-snapshot-file-modes`。
 
 45. **快照含绝对符号链接（9 个 applet 指向 `files/usr/...`）→ 暂存解压必须放行 runtimeRoot 内的绝对目标（2026-09-08 实测）**：final 快照 1989 个符号链接中 554 个是绝对目标——545 个 Termux 残留（`/data/data/com.termux/...`，应拒）与 **9 个指向本应用运行时根**（`/data/user/0/com.dsharnessmobile.shell/files/usr/bin/{editor,ex,nc,pager,vi,view,vim,vimdiff,vimtutor}` → `libexec/{busybox,vim}/*`、`bin/more`；设备实测这 9 条在场）。旧解压器只在 `dest`（当时 = filesDir）内放行，**暂存目录解压（`.snapshot-stage`）会把它们全部静默丢弃** → applet 缺失。修复：`SnapshotExtractor.extract(..., runtimeRoot = context.filesDir)`，绝对目标只要落在 runtimeRoot 内即放行（交换后正是正确路径）；相对链接仍须落在解压根内，Termux 残留与 `../` 逃逸照旧拒绝。在线更新路径（UpdateManager，dest=update-stage）同款受益——此前同样在静默丢链。回归验证：装机后 `run-as ... ls -l files/usr/bin/more` 应见绝对链接。grep `isLinkTargetAllowed`。
-46. **无障碍通道的两条「僵尸」陷阱（2026-09-10 模拟器实测）**：① **prefs 僵尸 a11yEnabled**——`am force-stop` 杀进程时 `onDestroy/onUnbind` 不保证执行，`dsh-adb.xml` 里的 `a11yEnabled=true` 会留在原地，而系统已解绑服务；引擎若只读该标记就会把请求投进队列后无人取活（表现为工具 8s 超时）。修复：引擎侧 `a11yEnabled()` = prefs 标记 **且** 队列轮询心跳新鲜（`ControlQueue.pollAgeMs() < 20s`，壳侧长轮询每次调用即刷新 `lastTakeAt`）。② **重启后服务不解绑但也不重连**——force-stop + 重新 `am start` 后必须重新 `settings put secure enabled_accessibility_services ...`（实测 `settings get` 返回 null），否则 `dumpsys accessibility` 的 `Bound services:{}` 为空。排障顺序：`dumpsys accessibility | grep -A2 "Bound services"` → prefs → 队列 `lastTakeAt`。grep `pollAgeMs`。
 
-47. **门禁顺序错位会让新通道永远不可达（用户当场指出的设计缺陷，2026-09-10）**：把无障碍后端接进工具层后，如果 `gateFor()` 仍然只认 ADB 三道人门，工具会先被 ADB 门拒绝——a11y 分支永远走不到（实测：AI 拿到的一律是「请在开发者选项 → 无线调试 配对」）。修复原则（PRD §3.3 B3）：**两条通道等价、无障碍优先**——`gateFor` = a11y 在线 **或** ADB 门齐备，`ControlPolicy.decideControl(op)` 再决定后端；会话档位 `danger-full-access` 对两者同等要求。设置页也必须同步（无障碍为主入口 + 官方 Intent 跳系统设置 + Android 13 受限设置一键解锁，ADB 折叠为高级/脚本面），否则「改了后端没改授权面」等于没改。grep `decideControl`。
+46. **标准 write 新建文件仍触发 link/EACCES（2026-09-08 模拟器复现）**：0.1.2-rc.1 的普通覆盖写走 rename，但 createIfAbsent 走硬链接；不可据前者退役判断后者兼容。修复插件 dsh-android-fs 以 renameat2(RENAME_NOREPLACE) 发布完整暂存文件，保留已有目标和并发保护，不做 exists+rename 或 copy 退化。10 项测试已在 Ubuntu 和 Android 应用域运行；ARM64/HyperOS 待真机。
 
-48. **`settings.describe(options)` 的 options 被实现忽略（0.13.5 引擎侧踩坑，影响所有读其它命名空间的插件）**：`ctx.settings.describe({namespaces:['llm-pi-ai']})` **不会**按命名空间过滤，返回全部注册命名空间且顺序即注册顺序——取 `[0]` 很可能拿到 `llm-deepseek`，于是自定义路由永远查不到（表现为能力自动补全静默不写回）。正确写法：`.find(d => d.ns === 'llm-pi-ai')`。同族坑：未 `inject` 的服务直接读属性会抛 `cannot get property "credentials" without inject`——可选服务一律走 `ctx.get(name)`。grep `describe(options)`。
+47. **共享/外置项目不能直接沿用私有路径策略（2026-09-08）**：SAF 只返回文档句柄，旧 resolvePickedPath 仅映射 primary 且 Web 插件仅接收 /storage/emulated/0。改由 WorkspaceStorage 查询 OS 已挂载可写卷、匹配 UUID、拒绝非本地提供方及越界路径、实际探测读写后回传。pendingPermissionRequest 仅负责系统全部文件权限返回，不能在每次 SAF onResume 重开选择器。真实 Agent 在共享 FUSE 上 renameat2(RENAME_NOREPLACE) 返回 EINVAL；fs 插件仅对 Android /storage 卷路径采用 wx 独占创建，已有目标不覆盖，但写入中断可留下部分文件（不宣称原子发布）。ADB run-as 不是 app mount namespace，权限应以实际引擎读写验证。
 
-49. **inset 通道只做了一半：没有 top 通道 → 关闭沉浸式后顶栏/设置页头被状态栏压住（#135，2026-09-10 模拟器实证）**：`WindowCompat.setDecorFitsSystemWindows(window, false)` 让页面铺满全屏，但 `MainActivity` 的 insets 监听**只缓存 bottom/mandatoryGestures/ime 并推给页面**，`bars.top` 仅用于引导页 padding；同时 Android WebView 实测 `env(safe-area-inset-top) = 0`，于是状态栏可见时（沉浸式关闭）topbar 矩形 `y=0 h=61` 的顶部 16px 与设置面板 nav（`y=12`）都落在状态栏（48 物理 px = 24 CSS px）下面。修复：insets 监听补 `webSystemTopInset = pxToCssPx(max(bars.top, displayCutout.top))` → `pushWebInsets` 推 `--dsh-android-system-top`（状态栏隐藏时 `bars.top=0`，开关天然自洽）；注入层 `.mobileFrame` 定义 `--dsh-mobile-top-inset = max(env(safe-area-inset-top), var(--dsh-android-system-top))`，topbar/抽屉/设置面板/轨迹面板/开发者弹层消费。注意设置面板是被 fixed 遮罩**居中**的，改高度会把头部推回状态栏下——正确做法是 `box-sizing: border-box` + `padding-top`。grep `webSystemTopInset`。
+48. **PRoot 的 ADB 探测成功不代表普通应用域可执行（2026-09-09）**：`run-as` 启动 Debian/apt 成功，实际 Agent 调用却在 `/usr/bin/env` execve 返回 EACCES。静态 loader 不能只放可写 app-data；改为构建期生成 `jniLibs/<abi>/libdsh_proot_loader.so`，保留 ELF 并启用 native library 提取，使用 `applicationInfo.nativeLibraryDir` 作为 PROOT_LOADER。Node/PRoot 的动态 ELF 仍经 linker64 启动。Debian tar 含硬链接，应逐项安全解包并复制硬链接内容；检查越界之前要识别合法 `./` 根目录条目。新增环境 `.dsh/debian` 必须登记 SnapshotUserData.preservedNames，不能在快照更新后丢失用户安装的软件和任务记录。
 
-50. **弹出面板几何：宽度上限打在内层滚动容器上 = 卡片留空条 + 滚动条悬空（#135，CDP 实测）**：斜杠菜单 DOM 是「卡片 `[class*=_menu]`（背景/圆角/阴影）> 滚动容器 `[role=listbox]`」，壳侧历史注入脚本的 `[role="listbox"],[role="menu"]{max-width:min(92vw,340px)!important}` 只命中内层 → 卡片仍 410px、内容 340px（实测 `x=16 w=410` vs `x=20 w=340`），右侧 70px 空条、滚动条落在离卡片右缘 70px 处。模型菜单另有 `right:0 + width:max-content`，以触发器为基准 → 360px 视口下左缘 -84px，模型名丢前缀。修复：注入层 `ComposerPopupGuard` 按**实测矩形**写 `--dsh-mobile-popup-max-width`（卡片与滚动容器同值）+ `--dsh-mobile-popup-shift`（水平钳制，`[data-dsh-popup]` 上 translateX）+ 高度上限；按 `data-*` 锚点与测量工作，上游 CSS Module 改名不回归。grep `ComposerPopupGuard`。
+49. **原生引擎与存储撤权不能只靠 force-stop 测试**：模拟器中 APK force-stop 后可能残留原生 Node，引擎句柄为空时 stopEngine 仍须按本包 Harness 完整路径 pkill；不能全局匹配 bin.js。Debian 外部项目显式检查壳导出的 All Files Access；引擎启动和 MainActivity.onResume 刷新该状态。已打开句柄、系统 FUSE 缓存及其他授权可影响实际撤权时机，此检查不是实时内核隔离。撤权验收同时检查授权状态、工具拒绝与真实输出不存在。
 
-51. **无障碍截屏落应用私有目录 → 引擎 read_image 打不开；且多花一轮（#127，2026-09-10）**：`DeviceControlService.handleScreenshot` 原写 `filesDir/control-shots/`，该目录不在引擎可读根内（引擎侧报 `EACCES: open '/data/user/0'`）。修复：改写 `files/home/tmp/dsh-tmp/`（= `EngineManager` 给引擎的 `TMPDIR`，与管理插件 ADB 截图落地同源）+ 目录 LRU 兜底保留 8 份；工具层 `android_screenshot` 读字节 → `attachments.saveImage` → **结果内联图像块 → 立即删除临时文件**（模型不再需要额外一轮 `read_image`，零残留）；路由不支持图像/附件缺失/超上限时回退返回路径。grep `inlineShot`。
+50. **HyperOS 4 默认省电会冻结有前台服务的整个应用 UID（Pad 9 Pro Max 实测）**：Android 17 / API 37 上 EngineService 仍 `isForeground=true`，但 `/sys/fs/cgroup/apps/uid_<uid>/cgroup.freeze=1`、events `frozen 1`；Node 与 PRoot 服务同时无响应，回到应用后恢复。PID 子组 freeze=0 不能排除上层 UID 冻结。应用信息→省电策略→“无限制”后，回桌面 62.41 秒/13 次 HTTP 200，UID frozen=0、PID 不变，Agent 取消后端口关闭。只调整了本应用省电项，没有开启自启动或改写 cgroup；不把短时桌面后台等同于长期熄屏、高负载游戏并行或其他 HyperOS 版本。
 
-52. **点击无生效校验（#129）→ 新增便宜 `state` op**：`AccessibilityService` 的窗口/内容/滚动事件已维护 `invalidated` 标记与快照代次 `generation`，但只在 dump 时暴露。修复：新增 `state` op 返回 `{gen, invalidated, enabled}`（**不建树**），`android_ui_click` 点后 260ms 读一次并回报「已生效/未观察到变化」；同时把 `ACTION_CLICK` 的节点中心 / 手势落点回填到 `x/y`（此前 a11y 归一化路径恒返回 0）。新增 op 必须同时进引擎侧 `ControlOp` 与 `A11Y_OPS`（坑 47 同族）。grep `handleState`。
+51. **语音 SSE 语言前缀不等于正文，取消必须跨线程围栏（2026-09-09）**：Qwen3-ASR 先返回 `language Chinese<asr_text>`；只有完整标记之后的非空正文才计首字。VoiceInputController 用请求世代防止取消/页面切换后的旧任务写入新会话，进程发布和录音释放也受同一围栏约束。模型进程从 APK nativeLibraryDir 启动，不能执行共享存储中的可写二进制。CPU 4 线程是当前默认；stop 后整段处理，不把 SSE 当作流式声学缓存。
 
-53. **悬浮球完成态脱节（#133）**：`api-session/status running=false` 只重置 `sessionBusy/toolCount`，**不清该会话的待答/待审批项** → `pendingKind` 仍派生为 question/approval，球停在琥珀「等待你的回答…」且面板不收。修复：完成事件调用 `OverlayPanel.dropPendingFor(agentId)` 丢弃该会话 pending，并按 `overlay_display/auto_collapse_on_done`（默认开）自动收起面板——**有未提交草稿时不收**。grep `dropPendingFor`。
+52. **性能指标不能用 ADB 的可见性冒充应用权限（2026-09-09）**：本平板应用不能读 `/proc/stat`，GPU `gpufreq_usage` 连 shell 也拒绝。插件 CPU 为应用可读取的同 UID 进程时间差（不含隔离 UID 的 WebView renderer）；GPU 为 null/不可用。run-as 探针负载未反映在本应用采样中，未作为通过证据；同 UID 仍可能因 SELinux 域不同而不可读。用应用实际 ASR 子进程负载验证：空闲约 2%，4 线程转录时曾到 42.1%（本机 10 逻辑核心）。
 
-54. **目录同名模型跨厂商方言不一致 → 写入 reasoningEfforts 会让请求被网关拒（#134，独立排查）**：`dsh-model-capability` 从引擎目录按模型 id 取 `thinkingLevelMap` 写 `reasoningEfforts`，但**不写配套的 `compat.thinkingFormat`**；pi-ai 便按探测默认方言（未知 baseURL → `openai`）发送 `reasoning_effort`，真实厂商方言（如 zai）不同的网关可能直接 400，且档位持久化在 `agent-default-model` 被新会话继承。修复（0.2.1）：方言键改用**严格口径**——只要有目录声明了而另一些没声明即视为「方言不明」→ 跳过 `reasoningEfforts` 写入并记冲突；统一时连同 `compat.thinkingFormat/supportsReasoningEffort/maxTokensField` 一起写。grep `pickDialect`。
+53. **InputState.draft.length 不能直接作含文件卡片的 TokenSpan 末尾（2026-09-09 实机）**：draft 是展开 clipboardText 的投影，而 insert-text 使用 detect 投影（每张卡片仅占一个 U+FFFC）。直接使用 draft.length 会被官方跨度守卫拒绝，文字留在错误提示。末尾应折算为 `draft.length - sum(occurrences.length - 1)`，仍带当前 draftRev；修复写在语音插件，不修改 Lexical 或上游。必须用真实 reference decorator 卡片验收，普通文本 `@filename` 不足以覆盖此路径。
 
-55. **历史编号保留（内容不可还原）**：该编号由 0.13.5/0.13.6 的更新记录行引用（"新增坑 55-57"），但正文从未落到本文件；`docs/AGENTS/changelog-archive.md` 现存最早条目仅到 0.13.2-preview（2026-08-31），无法还原。按"不重编号"纪律保留该号占位；
-如需补正文，从 0.13.6 的认证台账 `docs/AGENTS/0.13.6-CERTIFICATION.md` 与当期 PR 描述回溯（登记义务：找到即回填本条）。
-56. **历史编号保留（内容不可还原）**：同坑 55——0.13.5/0.13.6 更新记录行引用的编号，正文不在库内、archive 无对应版本行。保留占位，勿重编号。
-57. **历史编号保留（内容不可还原）**：同坑 55——0.13.5/0.13.6 更新记录行引用的编号，正文不在库内、archive 无对应版本行。保留占位，勿重编号。
-58. **0.1.5 起 ui-layout 不能禁用（2026-09-10，追上游）**：上游把 `ui-layout` 变成布局服务中枢（`ctx.layout` 五方法、键控 `main` 槽、`provideRoot({hooks:{panelInfo}})`、`layoutInfo` 八字段）。profile patch 若仍 `- id: ui-layout / disabled: true`（0.1.2 时代为换自研 AppFrame 而设），`ui-conversation` 注册不进 `main`、`ui-sidebar-right` 注入不到 `rightbar`、`SidebarRoot` 读不到 `usePanelInfo` → **会话与左栏一起消失**。修复：删除该 disabled 条目，注入层改「移动适配层」（0.2.0 起不再注册 root 槽、也不再 `provide('layout')`——重复 provide 会整链失败，同 directory-picker 事故）。
+54. **语音 dock 与硬件字号（2026-09-09）**：`conversation.input.dock` 的宽度是整个会话区，插件必须沿用 `--dsh-composer-card-max-width` 和 `--dsh-composer-side-clearance` 才能对齐输入框。Homerail 当前语音界面使用 AgentVoiceCockpit 三条 SVG 曲线，旧 AgentChatPanel 柱条不是同一设计。安卓硬件 Ctrl 组合键可能不产生 DOM keydown，由 Activity 转发专用事件；仅模拟 DOM 事件通过不代表真实快捷键通过。
 
-59. **手机形态不能再锚 `[data-mobile]`（注入层 0.2.0）**：旧 AppFrame fork 自带 `[data-mobile]`/`[data-mobile-topbar]`；去 fork 后这些属性不复存在，样式会静默失效（弹出面板越界、设置页窄条、轨迹详情被遮）。现由 `mobile/form-marker.ts` 发布 `html[data-dsh-mobile-form]`（镜像 `(max-width:767px)`）、`[data-dsh-frame]`（由上游 `[data-rightbar-col]` 反查）、`html[data-dsh-modal-open]`、`[data-dsh-settings-dialog]`；顶栏为 `[data-dsh-mobile-topbar]`。改动样式前先 grep 这五个锚点。
+55. **多会话 UI 必须租用实际 session controller，且一个 Lexical root 只能挂载一次（2026-09-09 实机）**：当前 `ctx.sessions` 由 `dsh-api-session-controller` 提供，`dsh-client-runtime` 的旧实现不是实例来源。stage 租约补丁写入实际 owner，四个 `SessionSurface` 使用 renderer 的 scope binding 与标准 chat/composer 槽位；工作台打开时取消外层全局 composer 的实际挂载，不能只用 CSS 隐藏。版本守卫见协调仓 `scripts/patch-voice-deck.py`，原始快照 SHA 与每个替换锚点必须匹配。
 
-60. **原生「打开方式」两条出口与白名单（0.13.7）**：`PathOpen.openChooser` 与 `FileIncoming.openWithExternalReader` 共用 `FileIncoming.isReaderAllowed`（file_paths.xml 同一映射面）；目录主候选固定 `ACTION_OPEN_DOCUMENT_TREE`（FileProvider 目录 URI 多数文件管理器不可枚举），MT 管理器等按包名进「初始意图」——装了才出现，未装不臆造。返回 `{"ok",reason?}`，页面按 reason 分流文案，绝不静默（`no-handler` 弹提示）。
+56. **后台会话转录不能抢占正在输入的 Lexical selection（2026-09-09 实机）**：转录拥有原 sessionId 的租约，挂载组件不拥有任务。后台 editor 的 applyEdit 使用 `skip-dom-selection`；不可写结果先持久化再确认 native，存储满则保留 native 结果待显式处理。实际 C 录音后 R1 到 D，D 输入保持、C 接收文字、焦点仍在 D 通过。安卓 WebView 的 `document.hasFocus()` 有时为 false，手柄可用性由原生 Activity 前台/窗口焦点/引擎来源/租约守卫确认，不能只依据该 DOM 值。
 
+57. **双列横滑与原版样式（2026-09-09 实机）**：四条轨道用固定 `calc((100% - 12px)/2)`，`minmax(0,目标宽度)` 会收缩四轨到一屏。触屏在横滑吸附结束后按方向选中可见边缘会话；用 click 而非 pointerdown 激活卡片，避免拖动开始时强制聚焦/滚动。卡片 header/footer 规则限定直接子元素，保留原版 Markdown 与 composer 圆角、内边距、控件高度；只约束窄列控件宽度。对照同一实际回复的 H1/P/STRONG/UL/OL/PRE/TABLE/BLOCKQUOTE/CODE 节点和计算样式通过；测试文本单换行在原版 Markdown 也会合并，不能拿无 Markdown 列表标记的长文本冒充排版验收。
 
-61. **polyfill 片段共用一个 `<script>`：一个片段语法错误 = 整块 polyfill 静默全灭（0.13.7 模拟器实锤，排查花掉一整轮）**：`dsh-host-web-compat` 的 `POLYFILLS` 数组原来用 `join('')` 拼进同一个 script 元素——Set 集合方法片段以表达式 `})()` 结尾（**没有分号**），紧接着的下一段以 `if (` 开头，两段贴成 `})()if(` → 解析器拒绝**整个 script 元素**（`Unexpected token 'if'`）→ 页面上 `typeof Iterator === 'undefined'`、`Promise.withResolvers` 也没了，上游 0.1.5 客户端包 import 期直接 `Iterator is not defined`（表现为 "Failed to load plugins"，截图见 `.deploy-tmp/0137/now-01.png`）；而**服务出去的 HTML 里片段文本一个不少**，所以 `grep` 类检查全绿，检查脚本用的「`ES2024/2025 builtins`」标记还只是插件源码里的 JS 注释（根本不会出现在页面），假绿 + 假红线同时误导。**防线（三层）**：① 装配规则 `POLYFILL_SCRIPT_BODY` 对每段补 `;` 并用换行分隔；② `apply()` 装载期对装配结果逐段 `new Function` 解析断言，失败直接抛（`host-web-compat: polyfill injection does not parse: …`）；③ 门禁 `node dsh-host-web-compat/scripts/smoke-injections.mjs`（桩 cordis 真装配 + 逐段解析 + 页面标记）+ 设备侧 `scripts/verify-webview-015.mjs` 的「全部内联脚本可解析 / polyfill 活性」断言。**教训：注入类缺陷只能按「装配后能不能解析/能不能用」判，不能按文本在场判。** grep `POLYFILL_SCRIPT_BODY`。
-
-62. **孤儿写锁会让引擎永久起不来（Android 没有 operator）→ F4 引擎树补丁（0.13.7）**：`dsh-atomic-write.withFileLock` 用 `wx` 建 `<file>.lock`（内容 = 持有者 pid），只在 `finally` 里 `rm`。进程被硬杀（用户划掉应用 / 系统 OOM / `am force-stop` / 看门狗重启）时 finally 不执行 → 锁永久残留 → 之后每次写该文件都等到 deadline 抛 `atomic-write: timed out waiting for the writer lock at …/.credentials.yaml.lock`，**引擎 boot 直接失败**（实测现场：重复引擎进程被清掉后仍起不来，只因这一颗残留锁）。上游注释明写「contender never removes an existing lock … orphan recovery is an operator action」——桌面/服务器有位运维能删锁，Android 应用私有目录（`/data/data/<pkg>/…`）用户无任何可达手段。补丁 `atomic-stale-lock-F4`（scope=engine）在超时点做**一次**受控回收：锁记录的 pid 已消失（`process.kill(pid,0)` 得 ESRCH；EPERM 视为存活）且锁内容二次核验一致才删；读数失败/非 pid/不一致/任何异常一律不动锁（退回上游等待-超时语义）。行为回归 `node scripts/patches/tests/atomic-stale-lock.test.mjs`。排障配套：**同一时刻只许一个引擎进程**（重复进程既制造锁争用也污染 `dsh web:` banner 判读），现场先 `ps -A | grep -E 'linker|node'` 清干净再起。grep `recoverStaleLock`。
-
-63. **`inject-snapshot.py` 只替换快照内已存在的成员——给已有插件包「加新文件」不会进快照（幽灵缺陷温床）**：注入器按 tar 成员逐个判定（`member.isfile() and is_injectable(...)` → 用本地内容替换），只有**整包都不在快照里**时才走 `need_add` 全量新增（`scripts/inject-snapshot.py` 第 90-121 行）。因此「在 `dsh-host-web-compat/lib/` 里新加一个模块文件」这类改动，release 快照里**不会出现该文件**（本地跑得通、设备上 `Cannot find module`；0.13.7 处理 polyfill 缺陷时刻意把修复留在 `lib/index.js` 内就是为了避开这条）。需要新增文件时：要么确认该包整包走 add 路径，要么改注入器补「本地有、tar 内无 → 追加成员」的分支，并**在设备上 `ls` 该文件复核**。grep `need_add`。
+58. **Lexical focus 的 defaultSelection 不覆盖已有 selection（2026-09-09）**：`editor.focus(...,{defaultSelection:'rootEnd'})` 只在没有 selection 时选择末尾，不能满足“每次切换泳道都到末尾”。adapter 增加 `focus(atEnd)`；切换时显式 `editor.update(() => $getRoot().selectEnd(), {discrete:true,tag:'focus'})`，并保留 composition 守卫。L2 收放与普通重新聚焦不传 atEnd，维持当前光标；不靠字符串长度定位，兼容多行、emoji 与引用节点。
 
 
-61 续（同日第二层，同一入口）：**Iterator 垫片必须长成构造器形状，否则 pdfjs 把整树打挂**。清掉「Iterator is not defined」之后，`ui-sidebar-documentpreview` 的 combo 包仍在 import 期抛 `Cannot read properties of undefined (reading 'join')`。定位方式（可复用）：CDP `Debugger.setPauseOnExceptions: all` 暂停在抛点 + `Debugger.getScriptSource` 取源码行——出错行是 pdfjs 的 `if (typeof Iterator.prototype.join !== "function") Iterator.prototype.join = ...`：真 `Iterator` 是构造器且 `.prototype === %IteratorPrototype%`，而第一版垫片是裸对象 `{from}`（`Iterator.prototype` 为 undefined）→ 守卫行即抛，loader 记 `failed to import loader entry ...` → 整树 Failed to load plugins。修复：垫片改成 `function Iterator(){throw new TypeError(...)}` + `from` + `Object.defineProperty(ctor,'prototype',{value:proto})`（proto 仍是打过助手的 %IteratorPrototype%）；同时 `box()` 包装器必须 `Object.create(proto)` 而不是裸对象，否则链式助手 `iter.map(f).toArray()` 全断（真机断言当时报 `toArray is not a function`）。两道回归都进了 `dsh-host-web-compat/scripts/smoke-injections.mjs`：在 `node:vm` 里先删掉 Iterator 全局**和**原生助手方法（如实模拟 Chromium 110）再跑垫片，然后执行 pdfjs 的守卫行与 `Iterator.from([1,2]).map(...).toArray()`。**教训：垫片要按「真实现的结构」补（构造器 + prototype + 继承链），只补名字不够。**
+59. **输入框外层滚动会裁掉官方 /、@ 菜单（2026-09-09）**：菜单是原版 overlayAnchor 的 absolute 子节点，DOM 有候选不等于可见/可点。Deck composer 的 overflow:auto 会裁掉向上弹层，必须 visible 并提供层叠优先级；文字已有内部滚动。ResizeObserver 按卡片到泳道标题的空间限制 listbox 高度。验收必须包含 elementFromPoint 命中候选和真实触摸/键盘选择。
+
+60. **Android 嵌套聊天纵滚不保证向外传递横滑（2026-09-09）**：仅测试空聊天或输入栏手势会漏掉正文触摸锁定。Deck chat-swipe.ts 以 12px / 1.2 方向阈值路由横滑，纵向留原生，双指取消自定义拖动；代码/表格内部横滚优先。○ 使用 BUTTON_B/97 → east → send，原版提交守卫禁止空草稿/忙碌/拼字，录音和转录中禁止发送，长按仅一次。
 
 
-64. **运行时补丁不得引用引擎构建产物（bundle hash）**：`adaptIndexHashes` 用 `-([A-Za-z0-9]{8})\.(js|css)` 抓引擎
-    `dist/index.html` 的 bundle 名，而 npm 现包的 hash 已经是 `index-Df-65__b.js` 这种（带 `-`、9 字符）——正则匹配不上就
-    「原样返回」，patched 模板的旧引用被整文件写回 → 页面引到不存在的 bundle（白屏）。结论：这类补丁的生命周期跟着上游构建走，
-    要么不写，要么写就得随每次引擎升级核对（0.13.7fx-1 直接退役 `web-frontend-index.html`，见 RUNTIME-PATCHES §8）。
+61. **恢复 scroll-snap 会抢在惯性之前吸附（2026-09-09）**：松手立即恢复 x mandatory，再 scrollTo(round(left/stride)) 会令短快甩被拉回。保留最近约 100ms 移动样本，抬手延迟不追加零位移采样，最后移动超过 120ms 才判停顿；按释放速度投影 240ms，超过 0.35px/ms 时至少向该方向越过一条边界；慢拖/停顿按最近位置。rAF Hermite 缓动 260–460ms，完成才恢复 CSS snap 并选择/聚焦泳道。动画期间忽略逐帧 scrollend 与 160ms settle；新触摸可中断动画，手柄选择与尺寸变化取消惯性。
 
-65. **Android 应用进程的 cwd 是 `/`，而引擎拿它当默认值**：`SessionCommandController(ctx, agents, process.cwd())` 把
-    `process.cwd()` 当「未指定工作区」会话的 cwd；`file-reference-local` 在会话无 cwd 时也回退到同一个进程目录。
-    壳侧不设工作目录 → 新会话 cwd=`/` → `@` 菜单列的是设备根目录（acct/apex/cache…），用户看到「@文件功能无法使用」
-    （apk #150/#144）。修复：`ProcessBuilder.directory(应用工作区根)`（0.13.7fx-1，EngineManager.workspaceRootDir）。
-    同一族的坑：任何「上游拿 process.cwd() 兜底」的地方在 Android 上都会落到 `/`。
+62. **折叠不能只检查铰链状态，聊天也不能跨断点重挂载（2026-09-10）**：API 35 通用旧模板报告 CLOSED 却不改变应用窗口；Pixel Fold 参数能创建第二物理屏，仍须匹配 device_state/display_layout 映射才能交接默认逻辑屏。`scripts/configure-foldable-emulator.py` 仅对独立 AVD 安装固定 AOSP 映射。Web AppFrame 若在 mobile 分支换树，会丢失 Lexical DOM/selection 并触发 Deck unmount 的语音清理；统一槽位树、仅改容器样式，禁止用重新加载聊天实现动画。原生模糊等待双 rAF + WebView visual-state，160ms 降级启动、650ms 兜底清理，禁用/后台/销毁立即清理，快照最大边 1024 像素且只存内存。
 
-66. **Android 应用域禁 `link(2)`：补丁必须清点目标文件的全部 link 站点，不能只补历史锚点**：
-    0.13.7 追上游 0.1.5 后，运行期 asset `session-persistence-jsonl-index.js` 只给 `materialize` 路径
-    （`lib/index.js:2973`）补了 `EACCES → rename` 回退，漏了 `publishCurrentExclusive()`（:2021/:2032）——
-    而后者正是 `v0→v3` 会话迁移的必经路径，结果是**升级前写入的会话全部打不开**（apk #154，贡献者定位）。
-    修复：asset 从 0.1.5 包重出（两处都补）、新增构建期补丁 `spj-migration-link-F5`、门禁断言「两处标记都在」、
-    并加行为回归 `scripts/patches/tests/spj-migration-link-f5.test.mjs`（桩 fs 让 link 抛 EACCES → 断言 rename 生效）。
-    回退必须用**模块顶层导入的 `rename`**：`internals.fs`（defaultFileSystem）只暴露 open/readFile/readdir/stat/lstat/link/rm，
-    `internals.fs.rename` 会 `TypeError`（贡献者在 PR #156 里实测记录）。同类站点清点义务适用于所有 fs 原语回退补丁。
+63. **Codex Android runtime 不等于 Linux 沙盒**：2026-09-10 实测社区 0.153.3 的 command/exec 在 readOnly 下仍可写文件；Android adapter 必须拒绝 read-only/workspace-write 执行，不能自动升级。原生启动层打包在 nativeLibraryDir；Codex 清除 LD_* 后，用独立 Shell launcher 恢复本应用 Termux 环境。命令需自行选择完全访问。账号令牌仍由 Codex 私有 HOME 管理。详见 CODEX-BACKEND-MILESTONE。
 
-67. **文件名净化把 `..` 当「非法字符」处理是无效防线（#177 实锤，0.13.8 修复）**：`sanitizeName`
-    旧版只替换 `?*|:"<>` 与控制符，字符类无 `/`、无 `\`、无点——而 `..` 不是非法字符而是**路径语义
-    token**：外部 ContentProvider 完全可控 DISPLAY_NAME（`../../../../pwn.txt`），净化后原样落
-    `File(dir, name)`，上溯 5 级 = 应用私有数据目录根（任意新建，已存在文件因 uniqueName 的
-    exists() 检查不被覆盖）。根因 = validate() 守 URI、sanitizeName() 守字符集，**拼好的最终
-    落点无人校验**。修复 = ① sanitizeName 白名单化（`/` `\` → `_`、`\.{2,}` 折叠、百分号解码
-    先行、去首尾点）；② copyIn 落点走 safeTarget canonical 归属断言（写前+写后，双侧
-    canonical 化——Android 把 `/data/user/0` 解析为 `/data/data`，只做一侧会永远拒绝），fail-closed。
-    铁律：凡「外部字符串 → 落盘路径」一律过 safeTarget 同型守门，新增出口先查本坑。
+Codex 坑 63 补充：GPT-6 工具依赖独立 code-mode host。Android APK 的原生提取要求 `lib*.so`，固定 Codex 0.153.3 按兄弟路径查找 `codex-code-mode-host` 且不支持旧路径覆盖环境变量。prepare 脚本对两处等长文件名字节做有计数和 hash 守卫的替换，辅程序作为 `libdsh_codex_host.so` 打包；原件不改，回执记录前后 hash。Relay resume 需传入已选择的 permissions，否则平台守卫按设计拒绝恢复。
 
-68. **部署默认写面档位不是能力门（#172 实锤，0.13.8 修复）**：`dsh-android-bridge` 的
-    `gateFor/gateFacts/controlDecision` 三处曾叠 `&& st.tier !== 'T0'`——出厂装配
-    `writeMode: workspace-write`（profile-web.cordis.patch.yml:23）使 `tier` 恒 T0，
-    ADB 通道**恒判未就绪**（`android_adb_shell_exec` 永不返回 via:'adb'），且设置页显示
-    「未授权（T0）」——坑 29「勿把部署默认当死锁」的活体复刻。修复 = 三处删 tier 条件，
-    能力门 = 引擎级三道门 + 会话档位实时 resolve；`tier` 降级为部署视图字段
-    （AdbAuthSection 的「已授权」改按三道门，linux-env 的 adbTier 文案标注「档位视图」）。
-    铁律：门禁判定只允许「设备全局事实 + 会话实时档位」，任何部署常量进判定即缺陷。
+Codex 坑 63 UI 补充：Relay 的 AdvancedDebugGuard 会监视任何会话 header，并点击第一个聊天 tab，导致 Voice Deck/轨迹立即被切回。Android vendor 不挂载这个 guard。权限/停用错误在恢复 Thread 时保留原提示；不可误报为断线。
+64. **Codex 上下文委托与独立图片根目录（2026-09-10）**：仅在 LLM adapter 丢弃 `options.system` 不够，DSH ReactLoop 仍组装系统提示词并调用 `agent/pre-step` 注入插件、写入轨迹。`--codex` overlay 通过 `scripts/lib/codex_context_patch.py` 增加可选 `agent/context-delegation` waterfall；Relay native Codex 会话返回空 assembly 和真实用户消息，其他会话返回 `next()` 完整保留原行为。权限检查仍在 Android App Server transport，不升级用户权限；Skills / AGENTS.md 由 Codex 自己加载，DSH 专用工具不隐式导出。另：Node 主进程的 HOME 不等于子进程 CODEX_HOME，预览必须显式传入后者并限定 `generated_images` 目录，不能把私有 Codex 全目录加入图片白名单。历史失败提示不通过改写会话日志修复。
 
-69. **往 profile patch 挂「上游已挂」的包 = 整棵插件树加载失败（0.13.8 批 F/P2-14 实锤）**：
-    按设计文档把 `@deepseek-ai/dsh-spill-local` + `dsh-spill-policy` 以 `- insert:` 挂进
-    `scripts/profile-web.cordis.patch.yml` 后，设备上引擎起不来，日志真因：
-    `dsh: plugin tree failed to load: failed to apply loader entry include (cordis:include):
-    duplicate loader entry id: spill-local`。即**上游 host 组合默认已经挂了 spill 子系统**
-    （所以「已装未挂」的推断是错的——overlay manifest 只说明包在快照里，不代表没挂）。
-    代价是整棵树加载失败，不是单插件降级。铁律：新增 `- insert:` 前先确认 row id 在上游
-    组合/预置里不存在；挂载失败先看 duplicate id，再谈配置。
-70. **profile patch 的合并语义是「按 id 只增不删」——错误的 row 会永久留在设备上（0.13.8 实锤）**：
-    坑 69 的 spill 行写进 `home/.dsh/profiles/web/cordis.patch.yml` 后，**改回代码 + 重装 APK
-    + 重解压快照都没能删掉它**（实测：重装后该文件仍是旧的含 spill 版本，引擎持续起不来）。
-    根因是快照事务的 profiles 分区合并对 `cordis.patch.yml` 按 id 合并（0.13.8 B345 批
-    `SnapshotTransaction.mergePatchYamlById`），设计目的是保住用户手改，代价是**我们自己也删不掉
-    已注入的行**。恢复路径（已实测）：`adb shell` 删/改
-    `<files>/home/.dsh/profiles/web/cordis.patch.yml`（注意不要留 root 属主备份文件，见坑 71），
-    或清应用数据。**发布含义**：0.13.8 之后若需要下线某条已注入 row，老设备上删不掉——
-    必须在合并语义上给「上游注入行以 staged 为准」留口子（已登记 known-gaps）。
-71. **profiles 目录里放 root 属主文件 → 引擎 watcher EACCES 崩溃（0.13.8 调试时踩到）**：
-    用 `adb shell cp`（root）在 `home/.dsh/profiles/web/` 下留了 `cordis.patch.yml.bak-spill`，
-    引擎对 profiles 目录做 `watch`，读不到该文件 → `syscall: 'watch', code: 'EACCES'` 直接崩，
-    表现为「引擎启动失败」而日志里没有任何插件错误。铁律：调试期在 profiles 目录里造文件
-    必须 `chown u0_a53:u0_a53` 或立刻删除（应用 uid 见 `dumpsys package`）。
+坑 64 图片持久化补充：`dsh-attachment-local.ensureDurableHome` 原来同步直到 `/`，Android 上打开 `/data/data` 会 EACCES，导致图片即使路径合法、解码成功仍保存失败。同一 overlay 对 Android 改为 canonical filesDir 边界，保留应用目录内全部 fsync；HOME 与 TERMUX__PREFIX 都 realpath 处理 `/data/data` 和 `/data/user/0` 别名。私有附件仓必须在 filesDir 内，其他位置明确拒绝，不吞掉 EACCES；桌面原路径不变。真机独立 saveImageFile 探针已通过，见 `image-storage-probe.json`。
 
-72. **工具返回面聚合体不得含 `undefined` 成员（0.13.8 批 B0/B1 实锤）**：工具体对返回值做 lossless JSON 判定，
-    含 `undefined` 成员的整值被拒收（不是丢字段，是整条结果失败）。铁律：可选键缺省**整键不发**，
-    源头（构造对象处）与出口（序列化前）双修；新增/修改返回字段必须在**同一次改动**里进 `output.schema`。
-    锚点：`plugins/dsh-android-manage/src/lossless-json.ts` + `plugins/dsh-android-manage/test/privilege-status.test.mjs`。
-73. **`defineTool` 之后必须确认进了 `tools()` 的 return 数组**：不进注册数组就是死代码，而提示文案还在引导
-    模型去调它（表现为「工具明明写了却 always unknown tool」）。注册完整性**不得**用硬编码名单比对——
-    要源码级抽取 `defineTool` 名集合与注册名集合求差集（本轮 T2 门禁 `check-tool-output-schema.mjs`）。
-    锚点：`plugins/dsh-android-manage/src/index.ts` 的 `tools()` 数组 + `scripts/check-tool-output-schema.mjs`。
-74. **跨语言/跨模块等价门禁只锁「同一输入同一输出」不够，还要锁「输出能被另一端正确解释」**：V2 行句柄口径即此例
-    ——载荷行下标 ≠ 壳侧全量行表下标，两侧各自「自洽」而语义不互通（issue #206.1）。铁律：等价门禁必须包含
-    一端的**真实解码路径**（不能只比字节/长度/自造解析器）。锚点：`scripts/check-protocol-v2.mjs`。
-75. **门禁必须接在「所有」发布路径上，且任何 SKIP 必须计数（0.13.8 批 B2 实锤）**：本地链 PS1 / 云端编排器 /
-    两仓 CI / 发布组装四条路径任一漏接 = 门禁形同虚设（issue #208 根因）。发布链要求 **SKIP = 0**：只有
-    `--require` 把每一处 SKIP 判成失败，才不是「缺件也算过」。本轮修掉的真缺陷：registry 里 `attach-durable-F2`
-    的 marker 带文档后缀「（存在=已应用）」→ 与代码串永不相等 → 该资产/快照配对**每次静默 SKIP**（假绿）；
-    收紧为 `dsh-mobile durable-walk guard` 后核对组合 2→3、SKIP=0。锚点：`scripts/check-gate-skips.mjs`。
-76. **「我方写出的声明值」必须有一条会失败的机器检查把它与真源绑在一起**：哈希 / 清单 / 版本常量 / peer 基线 /
-    装配清单都属此类（ST-04/05/06 的共性）；没有对账断言 = 单边演进无人知。锚点：
-    `scripts/check-perf-instrumentation.mjs`（A1 出厂值 P-AC-01）、`scripts/contract-pin-gaps.json`（peer 基线声明制）。
-77. **桥面必须成对：凡「设备侧状态」必须有只读 getter，且 getter 返回事实而非偏好（0.13.8 ST-26）**：只有
-    setter 的开关一定会出现「开关显示开、功能不在」。基线 = `scripts/bridge-symmetry-baseline.json`（只许减少）：
-    本轮实测壳侧 AndroidBridge 35 个 `@JavascriptInterface`（含 ST-10 新补的 `getImmersiveMode`）、页面类型面 15 个成员、
-    独立对象 `BackGateBridge` 2 个；`getOverlayEnabled` 仍返偏好（ST-02 已改壳侧判定，桥面 getter 待同步）。
-    锚点：`scripts/check-bridge-symmetry.mjs`。
-78. **上游路由 exact 表先于 prefix 表 → 插件用 `kind:'exact'` 注册在 `/api/...` 下会绕过 `/api` 前缀的 cookie 鉴权与
-    Host 校验（上游零兜底）**：AGENTS.md §1「/api 全前缀浏览器鉴权」的表述必须带例外（已改）。自愈：鉴权必须
-    由插件自己带（本轮三条 file-incoming 路由），不能指望前缀栅栏。锚点：issue #205 / E-15。
-79. **门禁只在「正确的仓根」生效（0.13.8 批 B2 实锤）**：同一份门禁在两仓布局下相对路径不同（协调仓
-    `dsh-mobile-apk/app/...` vs apk 自包含根 `app/...`；`scripts/` 侧同名）。写死一种布局的结果是**一方恒红、
-    另一方恒绿**（假绿更危险）。铁律：新门禁必须带布局无关解析（候选路径逐个试，命中即用），并在两仓布局下
-    各跑一次自证。锚点：`check-state-registry.mjs` / `check-gate-skips.mjs` / `check-perf-instrumentation.mjs` 的 `resolveRepoPath`。
-80. **「接线面」与「声明集合」必须双向断言（0.13.8 ST-31）**：只断言「链上调用 ⊇ 声明」会漏掉「链上多调了没人
-    声明」，只断言「声明 ⊆ 链上调用」会漏掉「声明了但没人接」；两条链之间还要断言**门禁集差集 = 0**；发布链
-    必须以 `--run --require` 调聚合入口（去掉 `--require` 即 SKIP 结案）。锚点：`scripts/check-release-gates.mjs`。
-81. **补丁行为回归受 CRLF 影响（FX-E19）**：fixture 索引里是 LF，而 `core.autocrlf=true` 的工作树落地为 CRLF——
-    **多行锚点（含 `\n`）恒失配** → 回归在本地必红、CI 却绿（信号反转）。铁律：夹具写入前按 LF 归一
-    （`readFileSync(...).replace(/\r\n/g, '\n')`），不要靠工作树编码。锚点：`scripts/patches/tests/atomic-stale-lock.test.mjs`（本轮修复）。
-82. **`Reflect.get(ctx, 非 inject 服务)` 会让上游 webserver 把请求兜成 400**：插件读未声明 inject 的服务时，Cordis
-    属性代理不报错而是返回 `undefined`，调用方随后在上游请求处理链里被兜底成 HTTP 400（表现为「接口莫名 400」
-    而非「服务缺失」）。铁律：可选服务一律 `ctx.get(name)` 并显式判空，不要在 `inject` 之外靠 `ctx.x` 试探。
-    锚点：`plugins/dsh-android-manage/src/index.ts`。
-83. **通知渠道 importance 创建后只能降不能升；删除后同 ID 重建是 `un-deleted`（0.13.8 通知章实锤）**：弹窗语义
-    （HIGH）必须**第一次建渠道就用 HIGH**；要从静默转弹窗只能换**新渠道 ID**（改 importance 无效）。
-    锚点：`NotifyCenter.selectChannel()` 三态 + `NotifyCenterChannelTest`。
-84. **RemoteInput 回复动作的 PendingIntent 必须 `FLAG_MUTABLE`**：结果经 ClipData 注入，`IMMUTABLE` 会**静默失败**
-    （通知栏回复看着发出去了，引擎永远收不到）。仓内「一律 IMMUTABLE」口径改为「默认 IMMUTABLE，唯一例外 =
-    通知回复动作」。锚点：`NotifyCenter.actionPending(mutable = true)` + `NotifyActionReceiver.replyText`。
-85. **Kotlin 尾随 lambda 绑定最后一个形参**：给构造器末位加可选参数，会让 `MuxClient(a,b,c) { }` 把 lambda 当成
-    那个新参数（本轮编译两连败实锤：报的是类型不匹配而非无歧义错误）。铁律：加末位参数时同时检查所有尾随
-    lambda 调用点。锚点：`OverlayPanel.startMux` 注释 + `MuxClient` streamId。
-86. **通知动作接收器 `onReceive` 预算 10s（`goAsync` 不延长）且全程不得 `startActivity`**：只做「先落盘入队 + 一次
-    快速尝试」，重活交退避队列；动作处理器 `startActivity` 在 Android 12+ 会被 trampoline 禁令拦成静默失败
-    （logcat `Background activity launch blocked`）。锚点：`NotifyActionReceiver.onReceive` + `NotifyDecisionQueue`。
+注意：`EngineManager.applyRuntimePatches` 每次启动会用 `assets/patched/attachment-local-index.js` 覆盖 snapshot 中的 attachment-local，必须同步修改这个启动资产；仅改 overlay 仍然会失败。`verify-codex-release.py` 现在逐字节对照已装机附件模块与 APK 内启动资产，并检查上下文委托入口，不能只以 APK/snapshot 哈希作为模块已运行的证明。
 
-87. **注入链「只替换已存在成员」= 包内新增文件被静默丢弃 + 陈旧成员残留（0.13.8 实测，坑 63 活体复现）**：
-    inject-all.py 原语义只替换基座里已有的成员，且「包名已见」即不触发整包追加 → ①插件新增一个模块文件
-    （如 lib/route-auth.js、lib/types/**）不会进快照，而 tar 内的 lib/index.js 仍 import 它 → 设备侧
-    `ERR_MODULE_NOT_FOUND` → 引擎启动即死；②反向更隐蔽：源码已删的旧组件（0.13.7 去 fork 的
-    AppFrame/columns/stores/service/theme-presenter）会永久留在快照里。铁律：**注入后包内容 == 源包内容**
-    ——对每个工厂包先修剪 ∉ 源包成员的条目、再补 push 源包中缺失的 rel（父目录项一并补），计数器打印
-    `pruned stale`。门禁 `scripts/check-inject-completeness.mjs`（成员集合 + 相对导入可解析，仅对「源包有、tar 缺」判红）。
-    锚点：`scripts/inject-all.py`（factory_rel 修剪 + 补缺循环）、`scripts/check-inject-completeness.mjs`。
-88. **镜像漂移会让「本地已验证的修复」在另一棵树/另一条链上静默失效（0.13.8 实测）**：本次修 inject-all.py 时先改
-    协调仓、随后用 **apk 树副本**跑真注入 → 跑的是旧脚本（replaced 212 / added 0），于是「修复后仍红」的假象
-    排查了两轮；同一形态也解释过 -Fast 链上的 4 项门禁红。铁律：**改完立刻双写并跑 `check-patch-mirror`，再跑构建/注入**；
-    构建日志里的 `[fill]/[prune]` 计数缺失即是「用了旧脚本」的直接信号。锚点：`scripts/check-patch-mirror.mjs`（目录级镜像面）。
-89. **Kotlin 块注释可嵌套：KDoc 里写 `node_modules/**` 这类 glob 会吞掉整个文件（dev-shell 实测）**：块注释内再出现
-    `/*` 会开启一层嵌套注释，注释边界被推进 → 后续代码被注释掉或编译报错，且报错位置通常远离真因。
-    铁律：KDoc/块注释里不要写含 `/*` 的 glob（用 `node_modules/**` 之外的表述或行注释）。
-    门禁 `scripts/check-kotlin-comments.mjs`（字符串/原始串/字符字面量感知的词法扫描 + `--self-test` 两向自检）。
+65. **Codex 跳过提示词组装时仍须捕获会话模型选择（2026-09-10）**：`installModelSelection` 原本借 `system-prompt/assemble` 捕获模型与 effort；直接跳过组装会漏掉这个非提示词副作用，导致 UI 投影选 Astra 而 request/context 仍标 DeepSeek，原生 App Server 使用默认模型。Relay native delegation 现在独立读取 `modelSelection.pending ?? lastUsed` （无历史的新会话回退到 `agentDefaultModel.currentSelection()`）并复制到每个 Agent 的 WeakMap；`agent/request` 在其他处理器返回后应用该快照，未选 effort 时清除继承值。拒绝非 Codex 路由，不恢复 DSH 组装/注入。空白标准会话只从模型菜单选 Codex 仍会被 preset/model 同步器回退，需先从 hero 的标准模式菜单选 Codex；已有会话的 preset 仍锁定。
 
-90. **经 RemoteInput 直接回复过的通知，`cancel()` 会被系统忽略（0.13.8 设备实测，dev-notify）**：AOSP 对「已直接回复」的通知
-    加 `LIFETIME_EXTENDED_BY_DIRECT_REPLY` 并置 `mCanceledAfterLifetimeExtension`（防止回复 UI 在应用收尾前消失）——
-    实测应用侧 `cancel()` 无效，连「清除所有静音通知」也清不掉它。**正解 = 同 `(tag,id)` 重投一次**（重投即清该标志）再 `cancel`。
-    证据：`dumpsys notification --noredact` 的 flags 原文 + id 数学复核（stableId 与投递 id 一致）+ 心跳 `pending 1→0` 但通知仍在。
-    锚点：`NotifyCenter` 的 cancel/重投路径 + `NotifyCenterChannelTest`。
+66. **折叠动画与外屏续接是两条链路（2026-09-10）**：lhasa 的标准 TYPE_HINGE_ANGLE 可用；原型仅监听窗口宽度且 onPause 清除全部转场，因此开始折叠没有动画。现在 FoldHingeMotion 去抖、量化角度进度，FoldTransition 在前台监听、半折静止 450ms 后淡回清晰，切屏完成后抑制同方向残余事件。onPause 清除位图/效果但保留无像素 handoff 标记，onResume/window focus 且非锁屏后恢复动画。系统 Settings.apk 中 close_lid_display_setting=1 为上滑继续、2 为保持亮屏、0 为立即锁屏、3 为智能保持；不能把应用 blur 当作系统唤醒或解锁。此手机拒绝 ADB WRITE_SETTINGS/INJECT_EVENTS，应由系统页操作；插件仅提供页面入口，不改系统设置。
 
-91. **模型 id 改名后，既有会话的投影缓存仍钉住旧 id（0.13.8 设备实测，dev-notify）**：`settings.yaml` 已更正
-    （`agent-default-model.model` 与 provider id 都是 `mimo-v2.5`），但 `grep -r -o mimo2.5 files/home/.dsh` 命中 7 处，
-    **唯一的功能性来源**是 `files/home/.dsh/storages/session_projcache/sessions/session-<id>.json`（旧会话投影缓存，
-    mtime 早于模型 id 修复）；`sessions/**` 会话日志对两个 id 都是 0 命中 ⇒ 钉住旧 id 的是**派生缓存**而非日志。
-    表现为打开该会话时引擎报 provider xiaomimimo has no configured model mimo2.5。
-    修法：清掉该会话的投影缓存条目（或整体重建 `session_projcache`）让投影按当前 settings 重算；新建会话天然不受影响。
-    与「配置真源 vs 会话派生缓存」同族（对照坑：状态真源 vs 会话快照）。锚点：`files/home/.dsh/storages/session_projcache/`
+67. **折叠玻璃感是空间渐变，不能整页统一模糊（2026-09-10）**：用户明确以截图左强右弱为参照。FoldGradientBlur 在 API 33+ 使用系统高斯模糊多尺度层与 AGSL 横向权重混合，sigma 随横坐标 smoothstep 衰减至 0，范围随绝对铰链角度变化。采样同一实时 RenderNode，不叠加 FIT_CENTER 旧截图，避免字形错位和双影；半折静止保持渐变，完全展开清除，完全合拢无切屏 350ms 后恢复。端点 170-180 度噪声不触发；布局仅在物理面板尺寸改变时触发（前后台交接另外保留折叠意图），旋转/分屏/IME/刷新率改变不算切屏。低版本/着色器异常退化为清晰布局，不恢复已被拒绝的整页 blur。旧坑 66 中的快照及半折 450ms 淡出行为已被替代。测试桥 foldPreview 仅 debug 执行、4 秒兜底清除；用户真机折叠与 GPU 像素测试应分别记录，模拟调用不能冒充物理折叠。
 
-92. **收紧门禁的扫描口径会把「不相关的面」整体打瞎（0.13.8-b 实锤：overlay 门禁 7 项假红拒打包）**：给
-    `check-engine-overlay.mjs` 加反向面（依赖闭包 + 根安装集钉面）时，把扫描器的提取条件收紧成「只处理
-    `package.json`」——于是 `want` 里的 `.js`/`.ts` 目标（7 条引擎树补丁的 patch-marker）永远取不回内容，
-    全部报「[patch-marker] 缺失」，`-Fast` 全链拒绝打包，而反向面本身完全正常（误导排查方向）。
-    判别锚点：**目标文件是否真在 tar 里**（逐个查 tar 成员即可证伪「包被裁掉」的假设）；r10–r13b 在同档位为绿
-    亦说明 marker 本可取到。铁律：改一门禁的取数口径时，逐个调用点回到「它原本要取什么」，新口径必须与旧面
-    共享同一遍扫描、不能顺带窄化。防线 = 门禁内置自检「want 含非 `package.json` 目标而扫描器一个都没取回 → FAIL」
-    （`scripts/check-engine-overlay.mjs`），且反向面/前向面分别计数打印。
+68. **单屏渐变不等于双屏玻璃效果（2026-09-10）**：用户进一步明确两块物理屏须同时亮、同时渲染。lhasa 状态 3 仅内屏 ON，0 仅外屏 ON，5/6 配置两屏 ON；ADB 临时请求 5 实测两物理屏均 ON、显示 ID 0/1，已 reset。此证明仅属 shell 能力，不能代替普通应用权限验证。config_deviceStateConcurrentRearDisplay 读到 -1，须核对 WindowManager Extensions/OEM 接入。新增仅 debug 的 FoldDualProbe，在原应用 UID 请求 5、15 秒限时、Presentation 探测、不改 hidden API 策略、不用 root/ADB；退出和后台尝试撤销，任何权限失败均记录。旧单屏实测结果只证明局部渲染/会话保留，不是用户最终验收。
 
-93. **纯动作广播冷启动：进程没有 Activity/WebView → 应答流 WS 的 cookie 依赖 WebView 侧刷新 → `ready` 永不来（0.13.8
-    设备实测，dev-notify）**：证据 = NOT_READY Ladder 档 65s 内 `ready gen` 恒 5（不来），`am start` 之后
-    `03:11:41.659 ready gen=1` → **76ms 后** `settle re-post ok` 补投成功；Recover/Budget 两档同样以 `am start` 为恢复前提。
-    含义：「引擎未就绪」在设备上的主要表现形态是**宿主 UI 未拉起**而非引擎慢 —— 因此「5 分钟墙钟预算」与
-    「就绪后补投」两条语义成立（预算常量单一来源 `ENGINE_BOOT_BUDGET_MS`，见 `EngineStartFlow.kt`）。
-    锚点：`EngineStartFlow.kt`（就绪轮询/预算）+ `OverlayService`（通知应答流）+ 状态登记条 `notify-ready-gate`。
+69. **安装不能隐式获得应用自己的 ADB 授权（2026-09-10）**：电脑 ADB 在线不代表 AdbState.allowSwitch/paired 为真。FoldSetup 在首次启用双屏插件时给出原生权限引导（仅 lhasa），授权布尔只由原生确认按钮用户手势写入；不自动点击、复制电脑私钥或把 signature 权限当普通运行时权限请求。FoldPairingService 通过用户通知 RemoteInput 接收六位码、自动发现本机端口，在本机前台服务完成配对；码不写日志/偏好，结果无代码。POST_NOTIFICATIONS 如缺失走系统申请，合盖设置入口单独提供。NSD 两种服务必须使用两个 listener，缺一个端口也要补查，只接收本机 IP，防止同 LAN 的 Pad 广播覆盖当前手机。
 
-94. **构建绿 != 产物对：某个 ABI 被门禁拒绝后，构建链仍可能以 exit 0 结束并交付单 ABI 产物（0.13.8-b 实锤）**：
-    `build-apk-013.ps1 -Suffix ''` 空跑时 arm64 侧 overlay 门禁判红 → 脚本打印「拒绝打包（arm64）」并 `continue`，
-    随后照常打印完成行且 **exit 0**，产物目录只剩 x86_64 的 APK ⇒ 发版会发出缺 ABI 的 release 而无人察觉。
-    铁律：per-ABI 的每条拒绝路径都必须把该 ABI 记入 `$rejectedAbis`，尾部必须打印「已产出 / 被拒 ABI」汇总，
-    并在「被拒非空」或「产出为空」时 `exit 1`。防线 = `scripts/check-build-chain-abort.mjs`（静态逐处断言 +
-    `--self-test` 抽真实尾部块用合成状态驱动：被拒→非 0 / 全产出→0 / 零产出→非 0 / 去掉守卫→0 承重反证）。
+70. **双屏 ADB 必须有可回收租约（2026-09-10）**：lhasa 当前标准 WindowArea API 实测不可用；已授权应用内 ADB 的固定 state 5/6 路径实测双物理屏 ON，Presentation/PixelCopy 46 帧无错误。FoldDualPolicy 离开端点（8–170°）持续 100ms 才进入双屏；端点 ≤3°/≥177° 持续 250ms 释放。FoldDualDisplay 串行、合并异步请求，后台/锁屏立即销毁副屏聊天画面，失去心跳由 shell watchdog 兜底。shell 对 app PID 的 `kill -0` 返回 EPERM，不能作为死亡判据；用 `/proc/PID` 存在性和心跳超时，实测 4 秒后租约仍活，停止续租后 15 秒内释放。只能取消与 token/请求所有者匹配的自有租约；已有其他 override 则拒绝抢占。不复制电脑私钥。副屏白色系统栏须单独隐藏，不能只修 MainActivity。角度自动双屏完整路径仍需实折验收；不能把此静态探针等同最终体验。
+
+- 坑 70 补充：用户实折发现 state 6 外屏主画布让内屏暂时保留竖向布局；自动双屏统一请求 state 5，临时保持最近完全展开时的内屏方向，释放后恢复应用原始方向策略。外屏模糊应随合盖减小，与内屏相反；因此不能把已模糊的主屏 PixelCopy 后直接显示。改为可见 WebView.draw 清晰内容 + 副屏独立 RenderEffect，分别用 `(170-angle)/150`（内）和 `(angle-10)/150`（外），端点夹紧。此修正新增单调性测试，实机性能和像素复验待完成。
+
+71. **前台常亮不等于绕过系统锁屏（2026-09-10）**：用户要求 DeepCode 内不自动锁屏，使用窗口 FLAG_KEEP_SCREEN_ON（默认启用），onResume/onPause 成对设置/清除；现有 keepScreenOn 桥改为主线程更新该请求，去掉 Activity SCREEN_BRIGHT_WAKE_LOCK，避免离开应用仍持亮。不改全局 screen_off_timeout、不解锁/覆盖 keyguard。电源键和 HyperOS 合盖策略仍由系统处理。
+
+- 坑 70 第二次补充：用户最终确认展开时外屏模糊区右→左扩大、内屏清晰区右→左扩大。FoldProjection 以正视对称折叠的正交投影基线 `boundary=cos(theta/2)` 驱动互补空间 mask，固定高斯模糊核、移动过渡边界，不再只改变全屏强度。明确这是固定视点近似；当前取样仍等高左裁切，尚未完成眼位透视单应映射，不应声称任意观察角度严格透明。
+
+- 坑 70 最终澄清（以用户实机照片为准）：内屏红框中已经物理露出的内容必须始终清晰。把互补 mask 铺在整块内屏上会模糊真实可见区域，已撤回；保留内屏清晰，由实际手机外壳遮挡自然产生可见范围变化。模糊只作用于外屏。因为内屏无滤镜，副屏可以安全用 PixelCopy 读取真实硬件合成画面；WebView.draw 不是等价替代，原生截图验证发现它漏掉了更新后的 HTML canvas 层。外屏仍是固定视点近似的移动边界，未实现根据用户眼位的精确单应取样。
+
+72. **合盖设置跳转参数必须来自实际 Settings 实现（2026-09-10）**：错误使用 `:android:show_fragment` 会启动 Settings/SubSettings 却没有进入目标页面，不能把 am start 成功当作配置页已打开。真机 Settings dex 的键是 `:settings:show_fragment`。修复后 UI 层确实出现“上滑继续使用（6 秒内无操作自动锁屏）/保持亮屏/立即锁屏”；用户选择后系统值由 1 变 2，已读取确认。早先多次“好了”时仍读 1，根因是错误深链，不能归责用户。
+
+- 坑 70 投影角度修正：实际模型是固定内屏、外屏绕铰链转动，外屏边界采用 `max(0, cos(theta))`，不再按双侧对称模型除以 2。半角版在外屏仍朝向用户的阶段只有最右极窄区域改变，用户感知为“外屏没变化”。内屏继续保持清晰。模糊过渡带只落在已越过边界的一侧；左边缘清晰。仍是固定正视近似，并非眼位重建。
+
+73. **独立内外屏滤镜与合盖交接（2026-09-10）**：PixelCopy 从已施加 RenderEffect 的主窗口取样会把内屏模糊带入外屏。新增 FoldClearFrame 在离屏硬件 RenderNode 录制同一 WebView，只在 clearSourceReady 后启用内屏折叠侧滤镜；不能把软件 Canvas 截图成功当作硬件 canvas 内容最新。固定右半屏始终清晰。合盖释放租约时原代码先 dismiss Presentation，再等待 ADB reset，造成外屏空白间隔；前台未锁定时保留 Presentation 到 reset 返回，交接期间先清除主屏滤镜。新路线待本轮真机截图与实际合盖验证，不能承诺消除厂商面板切换的所有黑帧。
+
+- 坑 73 补充：仅延后 dismiss 仍会在主屏映射/尺寸变化时继续采样，用户看到合盖后图片飞过；交接改为 freezeForHandoff 停止后续采样并保留末帧，Presentation 关闭窗口动画，恢复原方向提前到 state reset 前。内屏半角边界被用户反馈为扩展太慢，改为 `0.5*max(0,cos(theta))`，90 度达到全清晰；外屏公式保持不变。本轮待复验。
+
+- 坑 73 最终需求纠正：用户所说“太慢/一直清晰”指模糊覆盖不足，不能仅加快清晰区展开。取消右半屏恒清晰与 90 度全清晰限制；固定正视正交投影中铰链位于 x=0.5，折叠边缘投影为 `b=0.5+0.5*cos(theta)`。b 右侧可见并清晰，左侧遮挡侧渐变模糊；90 度 b=0.5、180 度 b=0。前述半屏公式已被替代，不能作为当前验收标准。它仍是假设固定视点的投影近似，不是眼位追踪。
+
+74. **合盖外屏 OFF 来自物理显示映射（2026-09-10）**：实际系统日志表明 state 5→0 会把外屏从 ON 变 OFF，再 ON，并等待约 300ms 首帧。仅延后关闭 Presentation 无法阻止供电切换。对照试验 state 0→6→0 只开关内屏，没有外屏 OFF。该副屏 canHostTasks=false，shell 启动 Activity 被明确拒绝，不绕过限制。新路线为 state 6 保持外屏主屏；FoldSharedCanvas 将同一个 WebView 临时扩为内屏比例，外屏窗口裁取左部，FoldMirror 向内屏渲染完整清晰源并独立施加已确认的内屏投影；竖向物理副屏内将图层旋转显示。退出恢复原 WebView 宽度和请求方向，不重建编辑器或会话。该重构须重新验证两屏像素、合盖供电事件、页面/草稿保留及朝向；不能仅凭 0→6→0 无 OFF 就声称完整体验已通过。
+
+- 坑 74 方向修复：固定 +90° 绘制到内屏副屏，和用户先前的反向横屏相差 180°。用户明确要求仅修复颠倒、保留已接受的模糊速度；回退包只构建未安装，恢复当前 state 6 方案后只修复方向。完全展开时记录内屏真实 display.rotation；副屏图层使用 `(savedInnerRotation - targetDisplay.rotation + 360) % 360`，并对四个象限分别平移回容器。尚未获得展开方向时使用本设备已确认需修正为的 270° 作为初值。验证同时检查左右模糊区和红色 TOP/蓝色 BOTTOM 标记，避免只测正弦条纹而漏掉上下颠倒。
+
+75. **共享镜像不能按外屏角色强制手机布局（2026-09-11）**：state 6 的 FoldSharedCanvas 将同一 WebView 扩宽到约 859 CSS px，外屏实际约 424px。原有画布断点会露出 56px 窄栏；第一次按 cover 标记强制 AppFrame mobile 的修复虽然藏住了外屏栏，也让内屏镜像切到手机布局，已被用户否决并撤销。最终保留原来全部断点与 DOM；responsive 插件仅提供 `window.__dshNavigationInset(widthCssPx)`，按同一侧栏求解器预测正文起点。FoldSharedCanvas 在一次原生更新中设置画布宽度与负 translationX，外屏从正文起点裁取，离屏硬件源仍完整录制局部 WebView 坐标供内屏使用。外屏 AGSL 按裁取偏移重新归一化，不改投影公式。退出恢复原 width/translation；异步回调按 generation 丢弃。运行时 client 补丁必须有包名、版本、SHA 守卫，不能覆盖未知用户构建。验收同时检查内屏布局、外屏无栏、原始清晰源不被裁剪、模糊方向及草稿/DOM 连续性。
+
+76. **轻折闪黑是主动交换主副屏造成的（2026-09-11）**：本机日志实证 3→6 会对原内屏执行 OFF→ON，反向 6→3 也有关断；保持 DOM/位图并不能遮住物理屏关闭。`cmd display enable-display 1` 在本机已授权 ADB 中可用，保持当前主屏及 device_state 无 override，静态对照只新增副屏 ON。FoldSecondaryCommands 用独立排他 token 文件/心跳/watchdog 租约启用逻辑副屏 1，拒绝已有 override 或已启用副屏；释放/后台恢复副屏禁用。FoldDualPolicy 非零值 1 现在表示副屏启用租约，不是 request state 1。角色随 HyperOS 自然折叠交接；内屏主屏时保持原 WebView，外屏主屏时才用共享宽画布。完整物理开合仍须复验，不能用静态 enable 成功就声称系统最终合盖交接零黑帧。
+
+77. **Codex 输入图片也有独立 hard-link 缓存（2026-09-11）**：DSH 附件上传成功不等于 Codex 能使用图片。relay-dsh-plugin-codex 的 persistContentAddressedImage 在 `.codex/dsh-input-images` 用 link 发布缓存，本机即使私有目录也报 EACCES。改为对受限制错误使用同目录完整临时文件 rename，已有目标仍检查普通文件/非符号链接与 SHA-256；相同 digest 的并发发布写入同一内容。APK 中 codex-image-input.js 采用固定 0.2.3-rc.1 + 已知基线/受管 SHA 守卫更新 host-plugin.js，未知包不覆盖。实际失败图片 668137 字节已验证缓存写入、重复使用、坏内容拒绝、符号链接拒绝及临时文件清理。不是相册权限问题，不能靠增加存储权限修复。
+
+78. **输入缓存写成功后，imageView 预览还有独立根目录校验（2026-09-11）**：Relay 的 imageView 原来只允许 workspace 与 runtime CODEX_HOME/generated_images；输入缓存由宿主 Node 的 codexInputImageRoot() 决定，两者 HOME 不同。新增 codexImagePreviewRoots，复用写入侧同一个缓存根，不放开整个 HOME。readImage 仍先 realpath 后按路径边界校验，目录外、同名前缀邻居、符号链接越界均拒绝。测试 scripts/test-codex-preview-roots.mjs 覆盖三个合法目录和三个拒绝场景。既有聊天中持久化的失败文字不会自动被改写。
+
+坑 78 实机补充：安装包内实际 importCodexImage 函数读取用户本次失败的 374942 字节 JPEG，通过 WebView Image.decode 验证 1773×2364；验证脚本 scripts/test-codex-input-preview-device.mjs，未重新提交生成任务。
+
+79. **物理屏幕透视与像素重采样是两层（2026-09-11）**：已有余弦模糊边界不会自动改变内容透视。新增 FoldPerspective/AGSL 对移动半屏做固定观察点回投；不能再将整张 WebView 压成梯形，否则叠加物理缩短且可能触发响应式。内屏固定右半保持恒等，外屏采样必须扣除裁取 offset。当前20项JVM数学/状态测试与APK构建通过，Fold双屏AGSL/网格通过、真实视觉待反馈，详见仓库 docs/FOLD-PERSPECTIVE-MILESTONE.md。
+
+80. **无线调试换端口不等于需要重配对（2026-09-11）**：电脑恢复连接后，应用AdbState仍可能保存旧localhost端口，返回device not found。现仅在旧连接失败后复用本机端口发现，校验新连接明确成功才保存；保留原授权门和密钥，不接邻机、不自动新授权。Fold已实测从34783更新43159，应用双屏租约获取/释放通过。系统属性可能为空，应保留只匹配本机IP的NSD回退。
+
+81. **单面板尺度与释放时重排（2026-09-11）**：透视观察距离不能用内屏整画布宽与外屏单面板宽分别计算；使用内屏半宽/外屏全宽归一，等物理尺寸时放大率一致。合盖旧trace确有CSS宽880→424与系统OFF/ON叠加。共享画布需等释放回执后再恢复；中途重开保留，且禁止sharedCanvas刷新分支重启已freeze的镜像。最新21项Fold测试与双屏AGSL/固定右半像素通过，真实视觉待验收，不代表解决系统电源交接。
 
 
+82. **零闪黑需要跨整个开合持有双屏状态（2026-09-11）**：仅 enable-display 或固定 OPENED state 3 仍被合盖策略关断外屏；实机60秒固定 OPENED_PRESENTATION state 5，base 覆盖3/2/0/1、角度0–179°，零OFF/ON且用户确认“不黑了”。自动实现改为前台全程 state 5，端点只迁移同一个 WebView 的原生宿主，不释放显示状态、不交换物理面板身份。移动时用旧帧垫底，等待 Chromium visual callback，再显示调整过布局的编辑器；外屏输入窗口必须转发自身 IME inset、拥有焦点，并单独实测触摸。六次自动宿主迁移同文档/同编辑器/同草稿且零电源事件；真实输入仍待验收。debug observe 重复调用只延期，不能每次拆窗口，否则对照引入额外闪烁。当前透视仅混入0.18*sinθ的回投位移，横向≤单面板4.5%、纵向≤2%；不是完整光学重建。
+
+坑82验证补充：旧shader脚本仅enable-display导致外屏实际全黑但mirrorShowing/frames正常，接口状态不能证明物理像素。当前脚本用与APK一致的state5租约并在成功前运行check-fold-perspective-pixels.py：八张物理图须非空、120°内屏固定右半与180°逐像素一致。四角度state5重跑通过；生命周期两种宿主退出/返回亦通过。真实触摸和折叠视觉仍待用户确认。
 
 
+83. **断点换布局会误播放抽屉/底部面板退出动画（2026-09-11）**：AppFrame跨640px保持子树挂载，但desktop sidebar/details变成mobileDrawer/mobileSheet时，旧桌面盒子成为CSS transition起点。实机记录margin-left与transform持续300ms，底部编辑器不动，面板从其上方滑出，表现为合盖“屏幕飞走”。原生120ms后请求visual-state callback不能保证CSS动画已结束。AppFrame在mobile标记变化的layout effect给根节点添加data-layout-changing，禁止这一轮drawer/sheet/mask/handle/frame过渡；经过两次rAF确认新盒子已提交后移除，只抑制断点重映射。`test-fold-endpoint-animations.mjs`在实际WebView上记录往返逐帧：自动panel transitions=0、手动drawer动画仍存在，同文档/编辑器/草稿。14项相关回归通过；APK5b414033…已部署、快照/账号/模型保留。仍需用户真实合盖确认，不把自动宿主迁移等同物理开合。
 
 
+84. **外屏可重排但不另加品牌栏；跨屏safe-area可能仍是内屏值（2026-09-11）**：用户明确选择“合盖后文字重排，但不显示顶部标志”，不选择永久宽画布/横移操作。AppFrame仅在原生foldStatus.dual.supported设备的mobile布局使用compact header：隐藏DeepSeek Harness品牌、导航绝对定位于现有会话标题旁边、mobileBody从y=0开始，输入区仍按外屏宽度排版。为导航在标题行保留48px空间，44px按钮保留可触面积。首版按env(safe-area-inset-top)定位，实机保留46px旧值令按钮y=50压住tabs；改为匹配既有header首行y=12，不再叠加旧inset。像素/矩形检查需确认按钮bottom≤tabs.top，不能仅检查“按钮在屏内”。
+
+85. **触屏会保留桌面 tooltip（2026-09-11）**：侧栏切换按钮的 role=tooltip 在 WebView 触摸后可因 hover/focus 残留；不能通过 blur 按钮、阻止事件或删除无障碍名称修复。响应式插件 TouchTooltipGuard 初始按 hover:none 设置触屏模式，捕获 pointerdown/move 区分 touch/pen 与真实 mouse，仅隐藏 tooltip；Tab 恢复键盘提示。CSS 按角色定位，不依赖上游散列类名，退出时清理监听/属性/样式。
+
+86. **多泳道语音/图片串会话（2026-09-11）**：客户端Cordis作用域事件必须显式传subject：`actx.bail(actx,event,payload)`，仅调用`actx.bail(event,payload)`不会触发身份过滤，其他已挂载会话可抢收。附件0.6.4把处理结果广播为document drop也会让多InputBar竞争；其composerReady还仅查询旧textarea。现版voice修正subject；图片经deckInput.for(id).addImages进入原InputBar intakeImages，保留权限/忙态/类型/数量/大小检查；来源ID与cwd在异步处理前固定，序号按会话分隔，目标不存在/拒绝显式报错。用户原图、草稿保持；文档卡片多泳道不在此次验收范围。
+
+
+87. **同一图片选择有两条入口，不能用 file input 验证替代原生菜单（2026-09-11）**：坑86只覆盖社区附件按钮的 input change。用户真实操作为「指令 → 上传图片」，host-web-compat 注入菜单调用 Android pickImage，再由 onImagePicked 向 document 广播 drop；右泳道菜单→左泳道图片的元数据追踪已复现。修复通过 callbackId 保存原 data-dsh-input-session 与 card 节点，回调校验身份/挂载状态后对原 card 派发局部 dsh-native-images，由 InputBar 的原 intakeImages 校验接收；取消清理映射，原输入框关闭不转投当前会话。引用文件的 mention 也限定原 card。host 0.1.9 新增版本/SHA 守卫补丁，不重解压快照。新测试实际点击菜单处理函数与语音按钮，经过 native callback / VoiceSession 轮询，再验证切到左边后的回写；原生返回值使用 fixture，不能标为相册/ASR 实测。测试须恢复原草稿；尚未输入过的 Lexical EditorState.isEmpty() 不能直接 setEditorState（error38），有变化时用 setDraft 恢复空草稿。
+
+- 工作台切换的 focus 在 activate、Lane layout effect、Deck mount 与手柄动作都有入口，统一由 hasHardwareKeyboard 守卫；Android InputDevice 只接受非虚拟且具有 SOURCE_KEYBOARD 的 ALPHABETIC 设备，不能将触屏/游戏手柄/鼠标当键盘。每次调用重新读取，支持热插拔。触屏切换可以 blur 原泳道输入框，但不抢走用户直接点击新输入框产生的焦点。实际外接键盘尚未重新接入，本轮仅验证系统返回 false 与模拟 true 分支末尾光标。
+- 工作台只隐藏 ConversationSessionHeader 的重复标题行，保留对话/工作台/轨迹标签用于返回；普通聊天标题不变。Fold 窄屏导航按钮占位转移到标签行，避免标题隐藏后压住标签；折叠透明效果源码未改。
+
+
+88. **Fold 展开宽屏遗漏键盘边界，visualViewport pan 不能忽略（2026-09-11）**：现场 innerHeight=608、visualViewport.height=335.27、offsetTop=272.73、native IME=273px；KeyboardBoundary 原来仅查 `[data-mobile]`，宽屏工作台完全未处理，Chromium 为聚焦编辑器将整页上移，顶部被裁且出现空白。临时仅把 frame 高度设为335.27仍错误，因为浏览器已有272.73px偏移。修复给 AppFrame 稳定 data-app-frame 标记，全部布局按 visualViewport.height 设高，CSS translateY=offsetTop 抵消浏览器pan；不再减一次IME高度，所有composer seat取消重复padding。监听visualViewport resize/scroll以及根style的MutationObserver，覆盖inset比resize更晚到达；attach可重入，关闭/卸载恢复原height/translate/padding。Fold最终实机两次真实键盘展开均273px、可见335.27px，frame顶部与viewport一致，全部输入卡片在键盘上方；关闭恢复自然高度。81项响应式测试通过。测试不修改草稿、不发送模型请求；证据docs/validation/2026-09-11-deck-ime。保留原皮肤暂停与透明折叠决定，不修改投影参数。
+
+
+89. **Fold工作台省略侧栏必须消除窄栏轨道，并保留右侧泳道身份（2026-09-11）**：普通computeColumns(sidebar=0)仍保留56px轨道，不等于无侧栏。Deck挂载经layout.setWorkbenchActive通知根布局，只有native Fold支持且workbench挂载时，AppFrame使用覆盖式抽屉；宽屏不标data-mobile、不修改设备状态。toggleSidebar/L2沿既有drawer状态工作，进入/离开工作台关闭抽屉但保留原宽度偏好。顶部以矩形分栏/箭头SVG代替三横线，沿用44px触摸目标与aria-expanded。工作台横向padding=6、列gap=12，列步长恰为完整画布宽的一半；隐藏滚动条只改scrollbar-width/WebKit scrollbar，仍可横滑。
+
+- 原__dshNavigationInset在此模式返回width/2，FoldMirror沿现有等高等比矩阵取右半幅；常规聊天仍返回导航偏移。它现在表示镜像来源起点，不能理解为所有模式都等于侧栏宽。原生模糊/投影/租约未改。实机内屏半幅1182×1672、外屏1168×1712，等比等高后仍有少量右缘裁切；不承诺两种硬件宽高比像素级完全一致。
+- Deck保留宽屏当前左右可见会话ID；resize到单列时激活原右侧，恢复宽屏时找回原左侧作为双列起点。异步布局期间的scroll事件必须检查新旧宽度一致，避免把已重排的几何覆盖原双列缓存。用户已授权此会话选择策略；输入的原owner不随之改变。
+- `scripts/test-fold-deck-layout.mjs` 验证抽屉开关不挤压、等宽、右侧会话交接、展开恢复、滚动条不可见但仍可滚、DOM与草稿不丢。自动hostPreview不是物理开合验收。像素测试需先确认当前是宽屏主窗口再采外屏；用户物理合盖后，直接在窄外屏画红绿半屏会产生无效对照，不能当裁切失败。最终强制有界宽屏窗口后9点均取到绿色右半幅，测试图已移除并恢复原窗口。
+
+
+90. **合盖首帧回执先于右泳道提交；双屏常驻不能始终锁方向（2026-09-11）**：用户发现近合盖闪左列，逐帧记录确认新宽424px时hostReady已true，仍显示左列；约50ms后才切右列。固定120ms后postVisualStateCallback只保证当时画面提交，不保证ResizeObserver/React已换好泳道。FoldMirror改为核对CSS/原生宽度和工作台__dshFoldDeckReady，再请求visual-state回执；之前正确的镜像仍垫底。Deck回调检查目标右列data-active及实际位置，resize同步定位右列后直接返回，避免再scrollIntoView旧active。世代取消和1500ms报错兜底保留；异常兜底不能算通过验收。3轮369帧检查零错误泳道、草稿/编辑器不变。用户另报无法竖屏：FoldDualDisplay原先租约全程SCREEN_ORIENTATION_LOCKED，现角度<170°保存原方向并锁定，>=175°恢复原请求（含用户系统旋转策略），中间5°滞回；同步保存真实内屏rotation，避免强制方向。实机以系统user-rotation命令完成0/270°两轮往返，608×859及859×608，原free模式与user_rotation=1已恢复。这是实际窗口旋转检查，非手持传感器验收。证据docs/validation/2026-09-11-fold-deck-handoff，后续330样本实折覆盖0–179°、零渲染错误，用户确认“不闪现了”。
+
+
+91. **刚露出区域立即清晰、179°仍采样投影滤镜（2026-09-11）**：旧内屏sigma=1-smoothstep(edge-.20,edge,x)，过渡带全在遮挡侧，x>=edge立刻变清晰；用户希望新露出的右侧也经过渐清晰。新带为edge-.10到edge+.18，保留signed-cosine投影边界，未改移动速度几何。增加145–175°强度渐退，>=175°移除整个RenderEffect，避免实机停在179°却仍做亚像素形变采样；外屏<=3°移除效果、3–12°平滑进入。shader与Java诊断共用feather常量；sigma与透视strength同步乘端点强度，权重仍为partition of unity。23项Fold JVM测试通过。该组是按参考片段/用户反馈校准，不是苹果公开公式，也不是真实眼动追踪。详见docs/FOLD-BLUR-REFINEMENT.md及validation/2026-09-11-fold-blur-refine。
+
+坑91验证补充：两屏13角度实机像素检查通过，内屏175/179°与180°源、外屏2/3°与0°源完全一致；右侧75%/90%位置对比度含中间值并随展开恢复。FoldDualProbe.observe有15秒期限，长扫描须每角度续期，避免把正常到期当渲染失败；finally仍要关闭probe并恢复正式折叠开关。用户视觉验收单列。
+
+坑91用户反馈后只提高maxSigma 10→14dp，边界与羽化、端点阈值均不变。不要通过移动边界/延长模糊停留代替强度调整。
+
+坑91增强版验收：加入75°采样后，两屏14角度全部通过，清晰端点零像素差，x=.75在75°对比度0.722，证明增强后仍有中间焦点态。产品参数没有为测试修改。
+
+
+92. **不能为取消网页式长按而禁用整个 WebView 的选字（2026-09-11）**：用户明确要求泳道聊天信息仍支持触摸和鼠标选字。NativeInteractionGuard 仅在 androidBridge 存在时挂载，默认 chrome user-select:none；稳定的 [data-chat-flow]（普通聊天和 Deck 共用）、显式 [data-dsh-selectable] 及 input/textarea/contenteditable 放行，正文内部按钮/折叠控件仍不可选。只 preventDefault contextmenu/selectstart，不拦截传播、touchstart、pointerdown、dragstart，不使用全 WebView setOnLongClickListener 吞事件。卸载清理样式与监听。不要以 data-conversation-scroll 作为宽泛白名单，某些外层会包含整个工作台标题和控件。Deck touchmove 原横滑逻辑可能抢走长按后的选区调整；检测到本工作台正文非折叠选区时取消拖动/惯性并还原 snap，selectionchange 也处理“touchstart 之后才开始选字”。清除选区后恢复普通横滑。
+
+坑92验证：87 项响应式、6 项 Deck 测试通过；手机真实 WebView 中鼠标拖选得到非空正文选区，正文/编辑器默认菜单放行，标题/按钮默认菜单被阻止，草稿未变。CDP touchStart/touchEnd 不走 Android 原生长按识别，不能以其零选区断言实际长按坏了；此设备 shell input 被 INJECT_EVENTS 限制。用户实际手指操作已回复“可以了”。详见 validation/2026-09-11-native-interaction。
+
+
+93. **枚举到 Vulkan 不等于实际用上 GPU，Mali 可能是 IGPU（2026-09-11）**：predict-woo/qwen3-asr.cpp 固定 6dcc586 的 ForcedAligner 只调用 GGML_BACKEND_DEVICE_TYPE_GPU，O3 Mali-G2-Ultra-NX MC16 被 ggml 分类 IGPU，最初静默 CPU 回退。scripts/build-forced-aligner.py 对 backend 和 weight buffer 两处增加 IGPU fallback，使用 QWEN_USE_VRAM=1，并在三张图计算后诊断 MUL_MAT 节点的实际 scheduler backend。实机分别为 GPU/CPU=4/0、194/0、197/0；不能用 GPU 名称、编译开关或速度独自证明。旧回退跑分被标无效并单独保存。
+
+坑93验证：现有 llama.cpp ASR GPU 日志确认 29/29 层及 CLIP Vulkan；一分钟带音乐 OSS 口播 CPU/CPU RTF 0.898、GPU/CPU 0.997、GPU/GPU 0.796、CPU/GPU 0.756（含分段及对齐器逐段加载，不含 ASR 启动/视频解码）。均单轮，非热控统计。独立对齐模型约 994MB，中文输出按字；0.08s 是模型刻度，非人工准确率。VAD 本例两切点均为低能量回退，不得写成检测到停顿。所有性能推理来自 ADB-shell，尚未证明普通应用 SELinux 域执行；transcribe 工具未挂载、正式 APK 未修改、日常语音 CPU 默认未改。构建产物留 artifacts，切勿因为 ADB 可执行就把 ELF 放 writable files 直接执行。详细证据见 ../../../docs/FOLD-MEDIA-SKILLS.md。
+
+
+94. **ASR/对齐原型转成 Codex skill 必须验证应用域与实际技能发现（2026-09-11）**：Fold 的 run-as 能读取私有目录，但对 /storage/emulated/0 模型 is_file 返回 false；真实 Codex shell（应用域）doctor 与共享音频转录成功。不能用 run-as 的 FUSE 失败宣称用户缺少存储权限，亦不能用 ADB-shell 成功替代应用执行。正式 APK 打包 libdsh_aligner.so、libdsh_aligner_vulkan.so 至 nativeLibraryDir，附许可证；prepare-forced-aligner-apk.py 校验固定构建 SHA 和16KiB对齐。运行时每次从 network-dns.json 获取安装后的新 nativeLibraryDir，不固化 /data/app 随机目录。
+
+坑94：Codex HOME 是 files/home/.dsh/codex-android/home，技能部署到其 skills/android-media、skills/android-transcribe，实际 Codex 读取 SKILL.md 并运行脚本通过。转录用宿主 Python 编排、现有 Debian runner 解码、CPU ASR＋实际 Vulkan 矩阵节点对齐；新增输出目录避免覆盖，源偏移加回 JSON/SRT，任务互斥和自有子进程清理。当前仅共享内部存储路径，外置卷未在此脚本接入；时间戳80ms是刻度，非准确率。测试4.204秒音频共9.843秒（含启动），不得外推一分钟性能。新验收会话要选择 relay-codex 模型与完全访问；session/selectModel 会同时保存全局默认，测试后通过 settings/replace 的 revision 守卫立即恢复原默认。文档 docs/FOLD-MEDIA-SKILLS.md 与 validation/2026-09-11-fold-media 保存版本、产物与真实工具记录。
+
+
+95. **注册供应商或同步模型清单不代表授权已配置（2026-09-11）**：DSH modelCatalog 原本直接枚举所有已注册适配器；模型同步插件会写入只有 models 的 pi-ai profile。不能只检查 profile 存在，也不能将 apiKeyEnv 为空直接当作可用。scripts/lib/model_catalog_filter.js 对 pi-ai 复用固定适配器 current/profileOf/config.resolveApiKey 与 Models.checkAuth，支持显式密钥、环境发现、OAuth 和免密服务；显式引用缺失不回退环境。其他声明供应商按 credentials.describe 的 configured 判定；没有声明配置地址的插件（Relay Codex）保留其自有目录。缺少配置不进入 groups，读取错误仍进入原 failures；不改变 routableProviders、默认和持久会话选择，不动设置页。原前端的 settings/document-updated、credentials/reference-updated、llm/adapters-updated 会刷新共享目录。
+
+坑95构建：scripts/patch-model-catalog.py 从当前快照提取 Host lib/index.js，SHA e8c43c… 守卫后插入辅助函数；Android 用包版本0.1.2-rc.1与SHA守卫应用 model-catalog-host。registration/current 是固定版本的内部接口，升级须重审，不能移植补丁时忽略守卫。该 Host 文件不是 patch-voice-deck.py 产出的 lib/client.js。5项目录回归覆盖显式/原生授权、免密、配置增删、错误隔离、持久选择及路由保留。
+
+
+96. **Host补丁新增服务调用必须声明Cordis注入，普通对象单测会漏报（2026-09-11）**：坑95首版只改buildModelCatalog，却未给SessionController的static inject添加settings，实机返回gateway/internal cannot get property "settings" without inject；错误发生在逐供应商隔离之前，连不依赖该设置的Codex模型也消失。现给固定Host类添加settings/credentials依赖，测试从实际补丁提取注入表，用限制服务访问的Proxy执行目录，覆盖此回归；手机modelCatalog返回6个Codex模型、零failure，配置与7会话未变。
+
+坑96设置：Fold工作台宽屏也沿用mobileDrawer，不能因祖先是drawer便把设置切成横向标签。mobile-settings.css.ts改为左分类/右内容，两列独立滚动，关闭按钮44px且不随内容滚出。原按钮CDP触摸能关闭，未复现按钮本身失效；系统返回旧实现只走WebView历史，现通过AndroidX OnBackPressedCallback优先调用设置自身关闭动作（含预测返回分发），再回退历史/Activity，不把UI遮罩当浏览历史。手机拒绝ADB INJECT_EVENTS，系统返回手势未自动化实测；右上关闭已实机CDP触摸验证，宽/窄视口检查单列证据。
+
+
+97. **本机安卓开发的执行边界**：Debian ARM64 编译工具与 Android 目标 ABI 是两个概念，不能因 Google SDK 支持 ARM 目标就假定其 Linux 宿主二进制能运行。最小 Java 工具链使用 API36 stub 和 Debian API29 资源框架，lambda 存在 stub 兼容限制；完整 Gradle/Kotlin/Compose 链需独立验证。ADB 复用应用自己配对的身份，不能复制电脑密钥；签名留私有目录，不提交。程序 performClick 不等于物理触摸或 INJECT_EVENTS 已获授权。当前通用入口见根目录 docs/PAD-ANDROID-APP-SKILL.md。
+
+
+98. **平板不是手机的ADB身份/工具链副本；长驻引擎token日志会轮转（2026-09-11）**：yingtian此前有adb二进制但没有应用配对prefs；经原生setAdbAllow/setAdbPair授权后T1已连接。已有系统imagegen skill不要另造同名副本；新android-app-dev显式引导其内置工具，真实Codex生图并在项目保存原图/提示词，Pillow仅做mipmap/adaptive资源打包。aapt先生成R.java再javac，支持res与图标；构建产物收据不等于安装成功，第一次真实安装被INSTALL_FAILED_USER_RESTRICTED拒绝，未绕过。验收见docs/PAD-ANDROID-APP-SKILL.md。Device.authenticate原来只查engine.log启动token，平板运行已久使日志轮转，现先复用壳dsh_engine_auth持久cookie并HTTP验证，凭据只在内存、无日志/报告输出。
+
+
+99. **实时指挥与下一轮队列不同，模型也不等于具备视觉输入（2026-09-11）**：`session/prompt mode=queue` 将消息放入 next-turn，通常每轮消费一条；不是实时转向。正在运行的任务纠错用 mode=steer，或对自己创建且仍pending的消息调用 session/updateQueue action.kind=steer，避免反复重复构建。四会话实验使用同一cwd下按应用分子目录；只有图标会话写icons。选择会话模型会修改全局默认，逐轮设置后必须按revision恢复。平板 local-qwen/qwen38-flash-next 当前未声明image input，read_image真实失败，不能假称模型看过截图；协调者可读图反馈，GPT6图标会话保持仅图标职责。应用自身ADB连通不代表USB安装允许：本轮鹈鹕APK在无系统弹窗时直接被USER_RESTRICTED拒绝。桌面Home/跨页滑动通过仍不代表长按归组已验证。
+
+100. **SME、KleidiAI 与应用集成需分别验证**：SME 属 CPU 扩展，不代表 NPU 开放。手写 smstart/smstop 入口必须保存/恢复 AAPCS64 的 d8–d15。不能将 NEON/I8MM/权重重排收益全部归因 SME；通用 CPU buffer 测试也不单独证明专有 kernel 执行。新进程加载不等于冷文件缓存；纯 ASR、对齐、解码分段与字幕导出必须分项计时。正式构建见根目录 docs/VOICE-KLEIDIAI-PRODUCTION.md，独立芯片探针不属于产品构建。
+
+101. **优化ASR正式打包必须同时更新完整构建和壳重建入口（2026-09-12）**：scripts/build-voice-engine.py生成默认libdsh_voice_server.so和旧libdsh_voice_compat.so，验证固定源码/收据/16KiB/许可证；rebuild-codex-shell.py和build-baseline.py同时接入，防止下次完整构建退回旧ASR。KleidiAI使用运行时特性检测，不全局强制SME；失败回退只清理自己的进程，取消不重试。麦克风重试不得重复投递草稿，字幕skill记录实际engine与加载尝试。debug固定fixture仅验证应用域SSE，不能写成麦克风实测。旧skill需随新APK升级doctor兼容库项；详细结果见docs/VOICE-KLEIDIAI-PRODUCTION.md。

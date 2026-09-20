@@ -44,6 +44,10 @@ function saveImpl(target, vendorRoot) {
   writeFileSync(join(vendorRoot, target), IMPL_state[target])
 }
 
+// Older release assets contain the inline F7 claim followed by the newer
+// helper claim. The second claim always loses, leaving an empty v3 log.
+const LEGACY_INLINE_CLAIM = /[\t ]*\/\* dsh-mobile exclusive publish \(F7\): rename\(\) silently replaces an existing target, so the\n[\t ]*EEXIST[^\n]*\n[\t ]*the loser gets EEXIST here and reports false, exactly like the link path\. \*\/\n[\t ]*try \{\n[\t ]*const claim = await open\(currentPath, "wx"\);\n[\t ]*await claim\.close\(\);\n[\t ]*\} catch \(claimError\) \{\n[\t ]*if \(claimError instanceof Error && "code" in claimError && claimError\.code === "EEXIST"\) return false;\n[\t ]*throw claimError;\n[\t ]*\}\n/
+
 const IMPLS = {
   // ── marketplace A：pre-execute 守卫（全工具崩溃修复）──
   'market-A': {
@@ -502,10 +506,12 @@ const IMPLS = {
   'publish-exclusive-F7': {
     file: 'usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js',
     scope: 'engine',
-    check: (s) => s.includes('dsh-mobile exclusive publish (F7)')
+    check: (s) => !s.includes('open(currentPath, "wx")') && s.includes('dsh-mobile exclusive publish (F7)')
       && s.includes('dsh-mobile exclusive materialize (F7)')
       && (s.match(/dshMobileClaimExclusive\(/g) || []).length >= 3,
     apply: (s) => {
+      s = s.replace(LEGACY_INLINE_CLAIM, '')
+      if (s.includes('open(currentPath, "wx")')) throw new Error('Unrecognized inline publish claim; review before packaging')
       if (s.includes('dsh-mobile exclusive materialize (F7)')) return s
       const MARK = '/* dsh-mobile link->rename fallback: Android app-private dirs reject link(2) (EACCES). */'
       const idx = s.indexOf(MARK, s.indexOf('isEEXIST(error)) return false;'))

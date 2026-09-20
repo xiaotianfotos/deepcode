@@ -1,6 +1,6 @@
 # RUNTIME-PATCHES.md — assets/patched/ 运行时补丁登记
 
-> 职责：`app/src/main/assets/patched/` 逐文件的权威登记（0.13.7fx-1 起 **2 个在册**：attachment-local、session-persistence-jsonl）——消费方 `EngineManager.applyRuntimePatches()`（EngineManager.kt:610-616），逐文件目标快照路径/作用/来源线索与维护约定。在册字节数与注册行号 2026-09-11 当场 ls/grep 实测；退役批次见 §5。
+> 职责：`app/src/main/assets/patched/` 六文件的权威登记——消费方 `EngineManager.applyRuntimePatches()`（EngineManager.kt:409-430），逐文件目标快照路径/作用/来源线索与维护约定。行号、字节数 2026-09-05 当场 grep/ls 实测。
 
 ## 1. 机制（EngineManager.kt）
 
@@ -9,24 +9,26 @@
 - **覆盖式全量替换**：`applyAssetPatch`（:439-462）把 asset 字节整文件写入目标，**非 delta/非行级补丁**——asset 即目标文件的完整修改版拷贝。
 - **内容指纹判定**：目标已存在且字节与 asset 完全一致（contentEquals，:454）才跳过；不用固定 marker 字符串——v1→v2 升级时旧 marker 曾导致更新后的 asset 被误跳过（:404-405、:432-434 注释实锤）。快照刷新覆盖目标后指纹失配 → 自动重施加。
 - **目标包缺席即跳过**：目标父目录不存在时不落补丁（:443-446，如包被上游裁出依赖图，宁缺毋滥不留死覆盖）。
-- ~~hashAdaptive~~（0.13.7fx-1 随 web-frontend-index.html 退役，理由见 §8）：曾用于让 patched 模板跟随引擎 dist 的 content-hash bundle 名；`adaptIndexHashes` 已随 asset 一起删除。
+- **hashAdaptive（仅 web-frontend-index.html）**：引擎 dist/index.html 引用 content-hash 的 bundle 名（`/assets/index-<hash>.js`）；引擎升级 → hash 变化 → patched 模板指向旧 hash 会 404 白屏。`adaptIndexHashes`（:471-490）先从引擎现存 index.html 提取当前 hash，再替换 patched 模板中的旧引用（同 stem/同 ext、hash 不同才替换；提取失败原样返回——宁不注入不写坏）。2026-08-23 前端审核 CRITICAL#4 落地。
 - 另有 append 式辅助 `applyAssetPatchAppend`（:493-505，marker 幂等追加，历史上用于 cordis.patch.yml 场景）——当前无调用方，仅保留备用。
 
-## 2. 文件逐项登记
+## 2. 六文件逐项登记
 
 目标根 = 快照内 `usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/`（dshPkgs，EngineManager.kt:410）。asset 字节数为 ls 实测。
 
 | asset 文件（字节） | 目标快照路径（注册行） | 状态 | 作用 / 来源线索 |
 |---|---|---|---|
-| attachment-local-index.js（48,404） | dsh-attachment-local/lib/index.js（:612-613） | 生效 | 0.13.7 重出（引擎 0.1.5-rc.1）：Android sepolicy 禁 link(2) → copyFile/rename 回退 + F2 祖先 fsync 守卫（与构建期补丁 attach-durable-F2 同源）；内含图片归一化 2048 降采样上限（`DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION = 2048`）。补丁判定走内容指纹而非内嵌标记 |
-| session-persistence-jsonl-index.js（**138,025** 已重出 2026-09-12） | dsh-session-persistence-jsonl/lib/index.js（:614-615） | 生效 | 0.13.7 重出：**两处 link(2) 站点都带 EACCES/EPERM/ENOTSUP → rename 回退**（materialize 与 publishCurrentExclusive；后者是 v0→v3 会话迁移的必经路径，apk #154）。构建期同源补丁 spj-migration-link-F5；回归 `scripts/patches/tests/spj-migration-link-f5.test.mjs`。**0.13.8-b 起该 asset 已落后于构建期补丁**：F7（发布独占 + 失败回收）只进了快照，asset 仍是 F5 版（无 `dshMobileClaimExclusive`）→ 启动时会把 materialize 站的独占语义静默改回旧版；重出后字节 = **138,025**，回归 `scripts/patches/tests/publish-exclusive-reclaim.test.mjs` |
-
-已退役资产（不在 `assets/patched/`，`applyAssetPatch` 注册行同步移除，勿再引用）：`primitives-index.js`、`fs-local-index.js`（0.13.3 批退役，d377abc——link(2) 回退族改由构建期补丁承担）；`web-frontend-index.html`（0.13.7fx-1 退役，§8）；`llm-deepseek-index.js`（rc.2 起遗留死资产，随重出批删除）。
+| primitives-index.js（299,131） | dsh-client-ui-primitives/lib/index.js（:417-418） | 生效 | WebView 剪贴板兜底：navigator.clipboard 在 Android 被拒（NotAllowedError）时的 fallback 逻辑（EngineManager.kt:396） |
+| attachment-local-index.js（41,295） | dsh-attachment-local/lib/index.js（:419-420） | 生效 | Android sepolicy 禁 link(2) → copyFile 回退 + EACCES 容忍（:397）；内含图片归一化 2048 降采样上限（文件内 `DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION = 2048`，行 786；`config.normalizedImageMaxDimension ?? 2048`，行 880）。注意：文件内未发现 `ORIGINAL` 字样标记——补丁判定走内容指纹而非内嵌标记 |
+| web-frontend-index.html（4,708） | dsh-web-frontend/dist/index.html（:421-422，唯一 hashAdaptive=true） | 生效 | viewport-fit=cover 沉浸式补丁（:398）+ dsh-mobile-es2022-polyfill 注入（issue apk#81/#79：Object.hasOwn / Array.prototype.at / String.prototype.at，服务 Chromium <92 定制内核 WebView，防插件列表 "Failed to load plugins"；见文件头部内嵌 script 注释） |
+| session-persistence-jsonl-index.js（58,909） | dsh-session-persistence-jsonl/lib/index.js（:426-427） | 生效 | link(2) 回退同族：dsh 0.1.1-rc.1 丢掉了 rc.8 的 EACCES/EPERM/ENOTSUP → rename 回退，Android 应用域 sepolicy 禁 link(2)，按 rc.8 形态全文件覆盖补回（:401-403） |
+| fs-local-index.js | dsh-fs-local/lib/index.js | 旧补丁已退役 | 普通覆盖写使用上游 rename，但 createIfAbsent 仍用 link 并在 Android EACCES；本地改由 dsh-android-fs 插件接管原子新建，不覆盖官方文件 |
+| llm-deepseek-index.js（38,909） | 无 applyAssetPatch 调用 | 在场未启用 | 旧 rc.1 模型目录覆盖补丁的遗留资产：dsh 0.1.1-rc.2 已原生捆绑 deepseek-v4-flash-vision-exp（含修正后的图片请求序列化），原生文件不再触碰（:399-400、:423-425）；rc8 迁移批同步移除了 onImagePicked/describeImage/bundle-hardening/textzoom 补丁（:413-416，textzoom 桥方法保留但功能面取消）。升级引擎版本时先核对其是否仍属遗留，避免误启用 |
 
 ## 3. 维护约定（硬约束）
 
 1. **全量替换非 delta**：asset 必须是目标文件的完整拷贝（在原文件基础上改后整体入库）；不允许只存 diff 片段或手写残缺文件——applyAssetPatch 直接 writeBytes 整写，半截文件 = 引擎启动即崩。
-2. **更新需随上游引擎对齐**：两个在册 asset 对应 0.13.7 重出时的 dsh 0.1.5-rc.1 包版本。升级快照内引擎版本时必须：① 逐文件核对上游是否已原生包含同等修复（能删则删，llm-deepseek/rc8 为先例）；② 重出 asset 从对应版本包文件改起，不从旧 asset 迭代；③ 与构建期同源补丁（F2/F5）**两处必须同源**，否则互相回退。
+2. **更新需随上游引擎对齐**：六个 asset 对应 dsh 0.1.1-rc.2 的包版本。升级快照内引擎版本时必须：① 逐文件核对上游是否已原生包含同等修复（能删则删，llm-deepseek/rc8 为先例）；② 重出 asset 从对应版本包文件改起，不从旧 asset 迭代；③ web-frontend-index.html 的 bundle 引用有 hashAdaptive 兜底，但 polyfill/viewport 逻辑需人工复核。
 3. **禁止随手重生成**：内容指纹机制意味着 asset 与目标「看起来差不多但字节不同」就会触发重写——不得用本地构建产物/不同 minify 形态随手替换 asset；改动须走完整链路验证（引擎起得来、市场/会话/附件功能实测）。
 4. **新增补丁**：applyAssetPatch 注册新条目 + 本表登记；优先评估上游新版本是否已修复（能不补则不补）。
 
@@ -52,104 +54,15 @@
 
 ## 6. 与协调仓 scripts/patches/ 的分工边界
 
-**协调仓 `scripts/patches/`（apply-patches.mjs + registry.json + data/compat-map.json）是快照注入链的构建期补丁框架**，按 `scope` 分两路：
-- `scope: vendor` 打 vendor 固化插件（dshmarketplace-plugin A-D、dsh-undo-savepoint E1-E7），在 `build-apk-013.ps1` 阶段施加；
-- `scope: engine` 打引擎树内上游包（attach-durable-F2 附件祖先 fsync 守卫、flock-android-F3 node-addon-system 无 Android 预编译的 stub、atomic-stale-lock-F4 孤儿写锁回收、spj-migration-link-F5 会话迁移 link(2)→rename 回退、reference-drill-F6 移动形态目录行下钻、boot-pending-G1、pi-toolcall-G2），在 `build-snapshot-013.mjs` 0f 步施加并逐个复查 marker。
+**协调仓 `scripts/patches/`（apply-patches.mjs + registry.json + data/compat-map.json）是快照注入链的构建期补丁框架**——打的是 vendor 固化插件（dshmarketplace-plugin A-D、dsh-undo-savepoint E1-E7），在协调仓打包时写入快照；**assets/patched/ 是设备端运行时补丁**——壳在每次引擎启动前对快照内上游引擎包做覆盖。两者层不同、目标不同、幂等机制不同（构建期 = registry 幂等标记；运行时 = 内容指纹），勿混用；构建期补丁登记见协调仓 scripts/patches/README.md 与 registry.json。
 
-**与本节 assets/patched/ 的分界**：同一份引擎文件的修复若能在构建期落地（随发行快照固化），优先走 `scope: engine`；运行时 asset 只承担「必须每次启动前覆盖」或「与引擎版本无关的壳侧定制」（见 §3-2）。已退役：pi-drift-F1（上游 0.1.5 原生 strict/deferred 校验）。**assets/patched/ 是设备端运行时补丁**——壳在每次引擎启动前对快照内上游引擎包做覆盖。两者层不同、目标不同、幂等机制不同（构建期 = registry 幂等标记；运行时 = 内容指纹），勿混用；构建期补丁登记见协调仓 scripts/patches/README.md 与 registry.json。
+## Ubuntu 文件系统适配（2026-09-08）
 
-## 7. 0.13.7 重出（引擎 0.1.5-rc.1，2026-09-10）
+`plugins/dsh-android-fs` 继承固定 0.1.2-rc.1 的 SandboxedFileSystem，复用公开但标为测试用途的 `internals.linkFile` hook，以 Python/ctypes 调用 libc renameat2(RENAME_NOREPLACE)。这是版本锁定的兼容接口，不是已承诺稳定的官方插件 API；升级前必须重验。完整设计和测试见插件 README，构建见父项目 `scripts/overlay-fs-adapter.py`。
 
-约定不变（§3-2）：**从对应版本包文件改起，不从旧 asset 迭代**。生成器：协调仓
-`.tmp-upgrade/rebuild-runtime-patches-015.mjs`（锚点缺失即抛错，绝不写半成品）。
 
-| asset | 目标 | 本次 delta（相对 0.1.5-rc.1 原文件） |
-|---|---|---|
-| `attachment-local-index.js` | `dsh-attachment-local/lib/index.js` | F2 祖先 fsync 守卫（`ensureDurableDirectory` 里的 `syncDirectory(parent)`；与 `scripts/patches/` 构建期补丁同源）+ **两处** link(2)→rename 回退（`publishImmutableAlias` 的 `source`、`publishStagedObject` 的 `staged.path`——0.1.5 变量名已变，旧锚点 `temporary/target` 失效）+ `publishStagedObject` 主链 `unlink(staged.path)` 容忍 ENOENT |
-| `session-persistence-jsonl-index.js` | `dsh-session-persistence-jsonl/lib/index.js` | import 行加 `rename` + **两处** link(2) 站点（`link(tmp, finalPath)` 的 materialize 站 + `publishCurrentExclusive` 的发布站）在 EACCES/EPERM/ENOTSUP 时改走 rename 回退（0.1.5 锚点仍在）。0.13.8-b 追加：`unlink` 导入 + 模块级小函数 `dshMobileClaimExclusive()` / `dshMobileReleaseClaim()`，两站共用（O_EXCL 占位独占 + rename 失败回收占位），与构建期 F7 同源 |
-| `web-frontend-index.html` | `dist/index.html`（hashAdaptive） | 与 0.1.5 dist 模板同源；资产里的 hash 由壳侧 `adaptIndexHashes` 跟随引擎改写，无需人工维护 |
-| ~~`llm-deepseek-index.js`~~ | — | **删除**：无 `applyAssetPatch` 调用点（rc.2 原生含 vision 后已成死资产，39KB） |
+## 2026-09-11 模型目录配置过滤
 
-校验：三份资产均 `node --check`（ESM）通过；标记串 grep `dsh-mobile link->rename fallback`（两处）、
-`dsh-mobile durable-walk guard`、`already consumed the staged file`；0.13.8-b 追加
-`dsh-mobile exclusive publish (F7)` / `dshMobileClaimExclusive`（asset 重出后必须在场）。
+`model-catalog-host.js` 由根目录 `scripts/patch-model-catalog.py` 从经SHA校验的快照Host包构建，只在 `buildModelCatalog` 列表阶段过滤未配置供应商。复用 pi-ai 实际 checkAuth 和显式密钥引用，不读取/输出密钥，不更改 settings/listModels 设置目录及会话路由。引擎冷启动前以 `applyVersionedClientPatch` 包版本+基线/上次SHA守卫部署；此方法也支持Host文件。快照仍保留原始包，不能只检验 snapshot.sha256 就声称补丁已部署；应比对设备 `dsh-api-session-controller/lib/index.js` 与 APK asset，并执行 session/modelCatalog。配套5项测试纳入 rebuild-codex-shell.py。
 
-**构建期**引擎补丁的锚点与行为回归：`build-snapshot-013.mjs` 0f 步施加后逐个复查 registry marker
-（缺席即拒打包），F4 另有常驻行为测试 `node scripts/patches/tests/atomic-stale-lock.test.mjs`
-（fixture = 0.1.5-rc.1 产物；`.deploy-tmp/` 下的临时预检脚本不入库，勿再引用）。
-
-### 7.1 同时落在构建期的引擎树补丁（scope=engine，不走 assets/patched/）
-
-- **reference-drill-F6（2026-09-11，apk #163）**：`dsh-client-ui-reference/lib/client.js` 的 `onPick` 判定由
-  `fileKind === "directory" && action === "drill"` 改为 `... || document.documentElement.hasAttribute("data-dsh-mobile-form")`——
-  手机上点目录行行体 = 下钻进子目录（上游只把下钻绑在行尾 chevron/Tab 上，手机上点不到，用户侧表现为「@ 只能选到第一层」）；
-  桌面无 form 标记，行为逐字不变。多选勾选框由注入层 `ReferenceMenuEnhancer` 负责。
-
-| 补丁 | 目标包 | 本次动作 |
-|---|---|---|
-| `attach-durable-F2` | `dsh-attachment-local/lib/index.js` | 与运行时 asset **同源**：附件祖先 fsync 对 Android 应用私有祖先（`/data/user/0`）EACCES 即止步。构建期补丁服务发布快照，运行时 asset 服务「快照刷新后重施加」——两者内容一致才不会互相回退 |
-| `flock-android-F3` | `node-addon-system/lib/flock.js` | 0.1.5 新增的会话写锁只有 darwin/linux 预编译 → Android 上 `ERR_FLOCK_UNSUPPORTED_PLATFORM` 让整树 boot 失败；按上游 browser-worker 先例 stub 为立即成功（单进程宿主）+ 一次性告警 |
-| `atomic-stale-lock-F4` | `dsh-atomic-write/lib/index.js` | 孤儿 `<file>.lock` 回收（pid 已消失 + 二次核验一致才删，每次获取最多一次）；行为回归 `node scripts/patches/tests/atomic-stale-lock.test.mjs` |
-| `spj-migration-link-F5` | `dsh-session-persistence-jsonl/lib/index.js` | 会话迁移发布（publishCurrentExclusive，v0→v3 必经）与 materialize 两处 link(2) 在 Android SELinux 拒 hardlink（EACCES/EPERM/ENOTSUP）时改用模块顶层 rename（apk #154）；运行时 asset `session-persistence-jsonl-index.js` 与之**同源**。行为回归 `node scripts/patches/tests/spj-migration-link-f5.test.mjs`（fixture = 0.1.5-rc.1 产物） |
-| `publish-exclusive-F7` | `dsh-session-persistence-jsonl/lib/index.js` | 发布独占语义找回：F5 的 rename 回退会**静默替换**已存在目标 → O_EXCL 原子占位抽成模块级小函数，F5 两站共用（publish 站输家 return false；materialize 站输家抛 EEXIST），rename 失败一律 unlink 回收占位（防 0 字节残留让之后每次发布都输掉竞争）。依赖 F5，行为回归 `node scripts/patches/tests/publish-exclusive-reclaim.test.mjs`（apk #170 / FX-207.1+207.2） |
-| `boot-pending-G1` | `dsh-app-boot/lib/index.js` | 非官方包 pending 降级为告警并继续启动（第三方插件 inject 了 client-only 服务 → 永久 pending → 整树 boot 失败）；FAILED 与官方包 pending 仍致命（0.13.5 W1b / apk #126 P3） |
-| `pi-toolcall-G2` | `@earendil-works/pi-ai/dist/api/openai-completions.js` | 流式 tool_call 空名止血：出口丢弃空名调用（连其 tool result）+ arguments 保证非空；累加器把缺 index/id 的续块合并进唯一在途调用（0.13.5 W2 / apk #124） |
-| `perf-patch-reload-N1` | `dsh-app-boot/lib/index.js` | 性能 A1：web 模板 `patchReload` 默认 live→startup（Android 无 live reload 收益，坑 19），并把 installation-owned 当前元组下**已显式写入**的旧默认 live 归一化（上游只在键缺失时写回模板默认，存量升级永不归一化）。行为回归 `node scripts/patches/tests/patch-reload-startup-n1.test.mjs`（P-AC-23/24） |
-
-镜像纪律（0.13.8 PR-A1 起）：本仓 `scripts/patches/**` 是协调仓权威源的**逐字节镜像**（云端
-自包含构建检出本仓），`scripts/check-patch-mirror.mjs` 在两仓 CI 与构建链强制比对——
-改补丁必须双树同批，单边演进即拒打包/拒合并（apk #171 的教训）。
-
-F3/F4 只影响引擎内部（无 WebView/壳侧定制面），快照固化即可，无需运行时 asset 每次启动重写；F2 的
-运行时侧由既有 attachment asset 承担——**两处必须同源**。
-
-### 7.2 0.13.8-b：F7 资产重出 + A1 出厂 profile seed（2026-09-12）
-
-**F7 资产重出（已完成 2026-09-12）**：F7 进了构建期快照，但
-`session-persistence-jsonl-index.js` 是**每次启动整文件覆盖**的运行时 asset → 不重出就等于没修。
-**当前状态：已重出，138,025 B，sha256 `BDAEF25C049368BB2415D8DADD14A2A2BE8ADB0DECDE0BE59961149415B7CA33`；**
-`node scripts/check-runtime-assets.mjs x86_64 --require` = 核对组合 3 / SKIP=0；asset 内
-`dshMobileClaimExclusive` 3 处（1 定义 + 2 站调用）、`dshMobileReleaseClaim` 2 处、materialize marker 1 处，`node --check` 通过。
-重出前的只读重演记录（留档，防再犯）：
-
-- 重出前 asset 字节 = **136,136**（更早的 §2 表内记 138,991 亦失真）；施加 F7 后 = **138,025**；
-- **两路同源已核**：把「当前 asset」与「快照 tar 里抽出的同名文件」分别只施加 F7，输出**字节一致**
-  （sha256 `BDAEF25C049368BB2415D8DADD14A2A2BE8ADB0DECDE0BE59961149415B7CA33`）。
-
-重出步骤（临时根，勿直接改产品代码）：
-
-```powershell
-$root = '.deploy-tmp\asset-regen'
-$dst = Join-Path $root 'usr\lib\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai\dsh-session-persistence-jsonl\lib'
-New-Item -ItemType Directory -Force -Path $dst | Out-Null
-Copy-Item 'dsh-mobile-apk\app\src\main\assets\patched\session-persistence-jsonl-index.js' (Join-Path $dst 'index.js') -Force
-node scripts\patches\apply-patches.mjs $root --apply --scope engine --only publish-exclusive-F7
-Copy-Item (Join-Path $dst 'index.js') 'dsh-mobile-apk\app\src\main\assets\patched\session-persistence-jsonl-index.js' -Force
-```
-
-重出后核对：`node scripts/check-runtime-assets.mjs x86_64 --require`（组合数 3、SKIP=0）与
-`Select-String -Path <asset> -Pattern 'dshMobileClaimExclusive' | Measure-Object`（= 3：1 定义 + 2 站调用）。
-**门禁盲区（已登记）**：`check-runtime-assets.mjs` 只比 registry marker，而 F7 的 marker 未随本次收紧 →
-陈旧 asset 仍会 PASS；建议随重出把 F7 的 registry marker 收紧为 `dsh-mobile exclusive materialize (F7)`。
-
-**A1 出厂 profile seed（性能 §7.2 A1）**：出厂 `home/.dsh/profiles/{web,headless}/package.json` 由
-构建链 `scripts/lib/profile-seed.mjs` 写入 `dsh.profile.patchReload = "startup"`（`build-snapshot-013.mjs`
-在 settings seed 之后调用；dev 档用 `DSH_PROFILE_PATCH_RELOAD=live` 覆写）；存量升级由引擎树补丁
-`perf-patch-reload-N1` 归一化。归档后 `check-perf-instrumentation.mjs --require` 复核产物内该键值
-（P-AC-01：发布档 startup / dev 档 live）。
-
-## 8. 0.13.7fx-1：web-frontend-index.html 退役（2026-09-11）
-
-**实测（从 0.13.7 发布快照 out/v0.13.7/snapshot-x86_64.tar.xz 抽出对比）**：引擎自带的
-usr/.../dsh-web-frontend/dist/index.html 与 asset 除行尾（CRLF vs LF）外逐字相同，bundle 引用
-（index-DuF6ti6g.js / index-DPX2bQLO.css）也就是 npm 包 0.1.5-rc.1 发布件自带的那套。
-因此运行时那一步只是把同样的内容按 CRLF 再写一遍（写一次后内容指纹才收敛），**没有任何行为增量**。
-
-**退役的直接动因（坑 64）**：adaptIndexHashes 的 hash 字符集 `-([A-Za-z0-9]{8})\.(js|css)` 跟不上
-npm 现包的写法（index-Df-65__b.js：带 `-`、9 字符）。一旦引擎 dist 不是这份 asset 对应的构建，
-改写失败就原样写回旧引用 → index.html 指向不存在的 bundle（白屏）。补丁的价值此前已随 viewport-fit 消失
-（Android WebView 上 env(safe-area-inset-*) 恒 0，系统栏避让已由壳侧 inset 通道承担；ES2022 polyfill
-由 dsh-host-web-compat 注入，覆盖面更大）。
-
-**改动面**：删 assets/patched/web-frontend-index.html；EngineManager.applyRuntimePatches() 去掉该行；
-applyAssetPatch 去掉 hashAdaptive 形参与 adaptIndexHashes 函数；本文件 §1/§2/§3 同步。
+修复补充：Host SessionController须显式inject settings与credentials，否则Cordis服务访问检查在任何供应商过滤之前使整个modelCatalog失败。补丁脚本同时修改注入表；新增依赖约束回归（共6项），设备实际目录确认无gateway/internal。

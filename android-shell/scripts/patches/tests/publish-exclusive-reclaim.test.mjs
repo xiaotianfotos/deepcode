@@ -47,12 +47,14 @@ function extractFunction(source, signature) {
   throw new Error('unbalanced braces for ' + signature)
 }
 
+const ASSET = join(repoRoot, 'app/src/main/assets/patched/session-persistence-jsonl-index.js')
+for (const source of process.env.DSH_PUBLISH_TEST_SOURCE ? [process.env.DSH_PUBLISH_TEST_SOURCE] : [FIXTURE, ASSET]) {
 const scratch = mkdtempSync(join(tmpdir(), 'f7-test-'))
 try {
   const target = join(scratch, TARGET)
   mkdirSync(dirname(target), { recursive: true })
   // FX-E19：fixture 索引 LF 而工作树在 core.autocrlf=true 下是 CRLF——按 LF 归一后写夹具。
-  writeFileSync(target, readFileSync(FIXTURE, 'utf8').replace(/\r\n/g, '\n'))
+  writeFileSync(target, readFileSync(source, 'utf8').replace(/\r\n/g, '\n'))
 
   const applied = spawnSync(process.execPath,
     [join(repoRoot, 'scripts', 'patches', 'apply-patches.mjs'), scratch, '--apply', '--scope', 'engine',
@@ -61,6 +63,7 @@ try {
   check('apply-patches (F5+F7) exits 0', applied.status === 0,
     (applied.stderr || '').trim().split('\n').slice(-3).join(' '))
   const patched = readFileSync(target, 'utf8')
+  if (source === ASSET) check('shipped runtime asset already repaired', patched === readFileSync(ASSET, 'utf8').replace(/\r\n/g, '\n'))
 
   // ── ① 补丁面断言 ──────────────────────────────────────────────────────────
   check('F5 两站回退 marker 未被回归', (patched.match(/dsh-mobile link->rename fallback/g) || []).length === 2)
@@ -82,6 +85,7 @@ try {
   check('patched file parses', parse.status === 0, (parse.stderr || '').split('\n')[0])
 
   const publishSrc = extractFunction(patched, 'async function publishCurrentExclusive(')
+  check('publish has no duplicate inline O_EXCL claim', !publishSrc.includes('open(currentPath, "wx")'))
   const claimSrc = extractFunction(patched, 'async function dshMobileClaimExclusive(')
   const releaseSrc = extractFunction(patched, 'async function dshMobileReleaseClaim(')
   const matSrc = extractFunction(patched, 'async materializePosix(project, dir, finalPath, id, content) {')
@@ -186,6 +190,8 @@ try {
   check('materialize 成功路径不留临时文件', !existsSync(reclaimLog + '.tmp-fixture'))
 } finally {
   rmSync(scratch, { recursive: true, force: true })
+}
+
 }
 
 console.log(failures.length === 0 ? '\nALL PASS' : '\nFAILED ' + failures.length + ': ' + failures.join('; '))

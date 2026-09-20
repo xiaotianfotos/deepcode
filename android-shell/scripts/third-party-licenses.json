@@ -88,5 +88,19 @@
     "zsh": "MIT-style (zsh)",
     "zstd": "BSD-3-Clause"
   },
-  "copyleftFamilies": ["GPL-1.0+", "GPL-2.0", "GPL-2.0+", "GPL-3.0+", "LGPL-2.1+", "LGPL-3.0+"]
+  "copyleftFamilies": [
+    "GPL-1.0+",
+    "GPL-2.0",
+    "GPL-2.0+",
+    "GPL-3.0+",
+    "LGPL-2.1+",
+    "LGPL-3.0+"
+  ],
+  "localPlugins": {
+    "@dsh-android/dsh-android-fs": {
+      "license": "MIT",
+      "licenseFile": "plugins/dsh-android-fs/LICENSE",
+      "runtimeDependencies": "Existing snapshot Python/ctypes and pinned upstream filesystem packages; no new binary"
+    }
+  }
 }

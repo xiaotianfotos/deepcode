@@ -1,6 +1,3 @@
-/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session/lib/index.js already-ok
-/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session/lib/types/index.js already-ok
-up-to-date
                     GNU GENERAL PUBLIC LICENSE
                        Version 2, June 1991
 

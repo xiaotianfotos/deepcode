@@ -1,0 +1,6 @@
+第一版成功，现在验证实际迭代：仍然只操作当前 phone-app-lab 项目和 com.deepcode.selfhost.counter，不覆盖 DeepCode 或其他应用。
+先将当前第一版 AndroidManifest.xml、src、app.apk、build-receipt.json、phone-revision-1.png 保存到项目 versions/v1/，不要复制签名私钥或工具链。
+然后亲自修改源码，把“+1”改成“+2”，同一个按钮每次计数增加2；版本文字改为第2版，versionCode=2/versionName=1.1，application label设为“手机开发实验”。正常启动仍然0；expected_revision校验2；self_test时执行三次真实按钮performClick并校验6，记录 SELF_TEST_PASS revision=2 count=6。保持当前排版。
+继续使用手机上既有 media.py --workspace 当前项目 --timeout 300 -- bash /root/android-app-lab/build-app.sh 在Debian编译，记录 build-v2.log。
+通过既有 /data/user/0/com.dsharnessmobile.shell/files/home/.dsh/android-app-lab/phone-adb.py install 覆盖安装独立实验App，然后 launch --revision 2 --self-test，等待自测，capture --revision 2 和 logs，保存 adb-v2.log。不要使用远程编译。
+查看截图确认+2、计数6、第2版可见。最后return回DeepCode，报告真实构建耗时、覆盖安装、自测结果和异常。不需要扩展其他功能；不要把程序performClick描述成真实手指触屏测试。

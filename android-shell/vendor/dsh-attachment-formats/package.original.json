@@ -1,0 +1,80 @@
+{
+  "name": "dsh-attachment-formats",
+  "version": "0.6.4",
+  "description": "Codex-style attachment format expansion for the DeepSeek Harness Web GUI: PDF text-layer extraction (pymupdf4llm / pdfjs), Office text extraction, long-document spill + index cards, scanned-PDF OCR (tesseract.js), and browser-decodable images to PNG.",
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots",
+        "sessions"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "npm run smoke:all",
+    "smoke": "node scripts/smoke-host.mjs",
+    "smoke:route": "node scripts/smoke-route.mjs",
+    "smoke:client": "node scripts/smoke-client.mjs",
+    "smoke:ocr": "node scripts/smoke-ocr.mjs",
+    "smoke:p0": "node scripts/smoke-p0.mjs",
+    "smoke:all": "npm run smoke && npm run smoke:route && npm run smoke:client && npm run smoke:ocr && npm run smoke:p0",
+    "lint": "eslint ."
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@joplin/turndown-plugin-gfm": "^1.0.67",
+    "@napi-rs/canvas": "^0.1.80",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.9.0",
+    "pdfjs-dist": "^4.10.38",
+    "sharp": "^0.35.3",
+    "tesseract.js": "^5.1.1",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "globals": "^16.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linkingoscar/dsh-attachment-formats.git"
+  },
+  "bugs": {
+    "url": "https://github.com/linkingoscar/dsh-attachment-formats/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "attachment",
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "ocr",
+    "web"
+  ],
+  "license": "Apache-2.0"
+}

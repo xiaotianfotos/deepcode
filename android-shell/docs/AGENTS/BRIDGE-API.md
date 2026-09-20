@@ -20,7 +20,7 @@
 - **依赖**：androidx.activity-ktx / core-ktx、commons-compress、xz；Shizuku 零依赖反射（ShizukuSupport.kt，仅探活示例）。
 - **兄弟仓库**（协调仓库下的子目录）：`dsh-shell-termux`（Termux 执行器）、`dsh-client-ui-responsive`（移动 UI 注入层 + F5 消费端）、`dsh-host-web-compat`（页面注入/兼容）、`plugins/`（dsh-android-bridge / -manage / -linux-env / -file-open，协调仓库内）、`vendor/`（dshmarketplace-plugin、dsh-undo-savepoint 固化副本 + PATCHES.md）。
 - **上游** `deepseek-ai/deepseek-harness`（本地 checkout `dsh/`）：只读参考，**零改动**；一切适配以补丁层/插件/壳侧实现。
-- **版本状态**：**0.13.3 开发中（vc30；引擎 0.1.2-rc.1 overlay + /api 浏览器鉴权 EngineAuth（P0 token 交换/P1 自 mint cookie）+ MuxClient /api/remote.mux $events 流重做 + pi-drift-F1 降级补丁 + withResolvers polyfill（host-web-compat 0.1.9）+ 字体滑杆退役（ui-responsive 0.1.13）+ vendor/dsh-model-sync；W1-W8 代码面全绿，回归与 push/PR 待用户口令）**。0.13.2 已发布**（Release v0.13.2 正式版，versionCode 29，2026-09-05，tag 落 main，15 资产，prerelease=false；详见更新记录表与协调仓 AGENTS.md §1）。0.13.2-preview（28）与 0.13.1（27）被其取代。**0.13.2 含悬浮球 v2.1 全套 + 用户实测三连修（deriveHalo/乐观置忙+bridge 0.1.2 turn_start/吸边同心）+ 快照刷新看门狗闸门（坑 37）**（#118 引擎启动/探活/UndoGate 五项 + 悬浮球 v2 重设计 + v2.1 三窗口/待答卡片/状态模板批 + 设置页全屏（ui-responsive 0.1.12）+ #120 工作区，详见更新记录表）。当前开放跟踪：#115（市场 Phase2，目标 0.13.2）、#120（添加工作区按键不可用——修复批已实施，待发版验证）、#108（数据备份 feature）。
+- **历史版本状态（当前以 AGENTS.md 与上游集成文档为准）**：**0.13.3 开发中（vc30；引擎 0.1.2-rc.1 overlay + /api 浏览器鉴权 EngineAuth（P0 token 交换/P1 自 mint cookie）+ MuxClient /api/remote.mux $events 流重做 + pi-drift-F1 降级补丁 + withResolvers polyfill（host-web-compat 0.1.9）+ 字体滑杆退役（ui-responsive 0.1.13）+ vendor/dsh-model-sync；W1-W8 代码面全绿，回归与 push/PR 待用户口令）**。0.13.2 已发布**（Release v0.13.2 正式版，versionCode 29，2026-09-05，tag 落 main，15 资产，prerelease=false；详见更新记录表与协调仓 AGENTS.md §1）。0.13.2-preview（28）与 0.13.1（27）被其取代。**0.13.2 含悬浮球 v2.1 全套 + 用户实测三连修（deriveHalo/乐观置忙+bridge 0.1.2 turn_start/吸边同心）+ 快照刷新看门狗闸门（坑 37）**（#118 引擎启动/探活/UndoGate 五项 + 悬浮球 v2 重设计 + v2.1 三窗口/待答卡片/状态模板批 + 设置页全屏（ui-responsive 0.1.12）+ #120 工作区，详见更新记录表）。当前开放跟踪：#115（市场 Phase2，目标 0.13.2）、#120（添加工作区按键不可用——修复批已实施，待发版验证）、#108（数据备份 feature）。
 - **环境无关声明**：本文档适用于任意环境（Windows/WSL/Linux/macOS、有/无真机）开发维护者；环境差异点（WSL、ADB 真机、run-as）已在对应章节标注。
 
 ## 2. 构建与验证命令
@@ -139,38 +139,75 @@ cd ..\plugins\dsh-android-<pkg> && npm run build
 | 引擎 → 插件 | cordis 服务面 | androidPrivilege（状态机/execAdbShell/execAdbLine/gateFor 会话级 danger）；dsh-shell-termux 执行器 |
 | 插件 → 页面 | dsh.client 模块 + slots | ui-responsive（AppFrame/DevSection/settings.dev.item/F5 消费端轮询）；bridge client（AdbAuthSection 双端口配对 UI）；undo/marketplace 注册 |
 
-**授权模型（定稿）**：引擎级 = 门1 All Files Access（**live prefs 键 `fullAccess`，壳 syncFullAccess 写入；env DSH_ADB_FULLACCESS 仅兜底**——0.13.0 Q8 不再重启生效）+ 门2 允许开关（live prefs）+ 门3 真实配对（adb pair 握手）；会话级 = `gateFor(exec.agent.session)` 实时 resolve，**ADB 能力（含观察类）仅 danger-full-access**，自动审批不参与；写面唯一在壳侧原生 AdbState（桥/引擎只读 live `dsh-adb.xml`）。0.13.8 #172：部署默认写面档位（tier）**只是视图字段，不参与任何能力门**——ADB 能力门 = 引擎级三道门 + 会话档位实时 resolve（出厂 workspace-write 默认不再钉死 ADB 通道，坑 29 定例）。
-
+**授权模型（定稿）**：引擎级 = 门1 All Files Access（**live prefs 键 `fullAccess`，壳 syncFullAccess 写入；env DSH_ADB_FULLACCESS 仅兜底**——0.13.0 Q8 不再重启生效）+ 门2 允许开关（live prefs）+ 门3 真实配对（adb pair 握手）；会话级 = `gateFor(exec.agent.session)` 实时 resolve，**ADB 能力（含观察类）仅 danger-full-access**，自动审批不参与；写面唯一在壳侧原生 AdbState（桥/引擎只读 live `dsh-adb.xml`）。
 
 ---
 
 ## 0.13.3 W2/W3/W10 桥协议增量
 
+- `pickFilePath(callbackId)`：@文件引用路径选择（SAF 文档 → primary 真实路径 → `onFilePicked(cb, {path,name,size,mediaType} | {refused} | null)`）——grep `pickFilePath` in BRIDGE-API.md
 - MuxClient：`/api/remote.mux` + `$events` 流（waterfall/emit/ready 帧）——grep `remote.mux`
 - EngineAuth：`/api` 全前缀浏览器 Cookie（P0 token 交换 / P1 自 mint）——grep `EngineAuth`
 
-## 0.13.5 W4 桥协议增量（设备控制授权面）
+## 语音和性能原生桥（本地 voice-debug）
 
-- `a11yStatus()`：无障碍控制通道状态 JSON `{enabled,label,sdk,restrictedSettingsApplies,hint,tokenConfigured}`（壳侧 `DeviceControlService.statusJson`）。
-- `openA11ySettings()`：官方 Intent `Settings.ACTION_ACCESSIBILITY_SETTINGS` 跳系统无障碍页（失败回退 `ACTION_SETTINGS` + Toast 引导）。
-- `unlockRestrictedSettings()`：Android 13+ 一键解锁受限设置（`appops set <pkg> ACCESS_RESTRICTED_SETTINGS allow`，走壳侧 ADB 通道；未授权/未配对失败关闭，返回 `{ok,message}`）。
-- 引擎侧只读状态端点 `/api/android/privilege/status` 新增 `control:{a11yEnabled,queue,tokenConfigured}` 与工具 `android_privilege_status` 的 `gates`/`control` 字段。
+`voiceStart(id): JSON`、`voiceStatus(): JSON`、`voiceStop(id)`、`voiceCancel(id)`、`voiceAcknowledge(id)`、`voiceRelease()`：请求 ID 绑定当前录音。状态 idle/permission/preparing/recording/transcribing/done/error/canceled。done.text 仅转录结果；前端消费后 acknowledge。页面卸载/退出前台取消活跃任务（授权弹窗除外）。默认本地 Qwen3-ASR-0.6B，原生进程 120 秒空闲卸载。
 
-## 0.13.7 增量（追上游 dsh 0.1.5，2026-09-10）
+`performanceSample(): JSON`、`performanceReset()`：已移除 cpu 字段及其采样；rssMiB 为同 UID RSS 总和（共享页可能重复统计）；gpu.percent 不可用返回 null 和 reason，不可拿频率替代。不需要 ADB 配对。
 
-> 本节为本轮桥面变更的权威增量；上行各表仍是 0.13.3-0.13.6 的行号锚点，未逐行重排。
+语音状态补充：`waveform[34]` 为真实 PCM 幅度（0..1），`silenceMs`/`silenceLimitMs=5000`、`speechDetected`、`autoStopped`、`capturedMs`、`lastSpeechMs`、裁剪后的 `audioMs`、`vad=webrtc-mode-2`。无语音自动结束返回 error，不调用转录；整段音频提交与输出 SSE 不等于持续音频输入。
 
-| 方向 | 方法 | 位置 | 说明 |
-|---|---|---|---|
-| 页面 → 壳 | `openPathChooser(path, mode)` | AndroidBridge.kt（新增）→ MainActivity `onOpenPathChooser` → PathOpen.kt `openChooser` | 系统「打开方式」选择器；返回 JSON `{ok, reason?}`（not-exists / not-allowed / no-handler / uri-failed / 异常摘要）。mode=`folder` 视为目录 |
-| 同上（允许面） | — | PathOpen.`isChooserAllowed`（0.13.7 追加） | 允许面 = FileIncoming 的 canonical 白名单（`files/home/.dsh/workspaces`、`files/home/tmp`、`files/usr/bin`、外部存储 `Documents/dshdata/`）**加外部存储根**——上游右栏 Files 标签能浏览整台设备，用户在那里点开的文件/目录必须能交给 MT 管理器或系统文件管理。`file_paths.xml` 相应新增 `<external-path name="external_shared" path="." />`。**引擎/插件驱动**的「文件提及 → 外部阅读器」（`openNativePath` → `FileIncoming.openWithExternalReader`）仍只走严格白名单，不因这条放宽；应用私有区其余部分（含 `.credentials.yaml`）永不进选择器 |
-| 页面 → 壳 | ~~`downloadDebugLogs()`~~ | 已删除（AndroidBridge/MainActivity/DebugLogExporter.kt） | 「导出调试日志」整链退役；日志仍按天落盘（设置页开关不变） |
-| 页面 → 壳 | ~~`pickImage(callbackId)`~~ | 已删除（AndroidBridge/MainActivity/ConfigTransfer 图片桥） | 上游 0.1.5 自带附件入口（回形针 → 系统文件选择器 → 官方上传接口）替代 |
-| 页面 → 壳 | ~~`pickFilePath(callbackId)`~~ | 已删除（AndroidBridge / MainActivity / ConfigTransfer 的 SAF 文档选择链 + 页面 `onFilePicked`） | 0.13.7fx-1 退役：`@` 文件引用回到上游原生菜单（`ui-input-trigger` + `ui-reference`，候选限定在会话工作区内），自建 `@路径` 桥不再需要 |
-| 壳 → 页面 | ~~`window.__dshBridge.onImagePicked`~~ | 已删除（dsh-host-web-compat lib/index.js） | 同上 |
-| 页面 → 壳 | `settingsPath()` | AndroidBridge.kt（新增）→ EngineManager.settingsDocumentPath() | Host 设置文档绝对路径（`$DSH_HOME/settings.yaml`），空串 = 文件不存在。移动适配层用它把上游「打开配置文件」（本来走 mac/win/linux 原生编辑器，Android 必然失败，apk #152）改走系统选择器 |
-| 页面（兼容插件） | `window.__dshOpenPath(path, mode)` | dsh-host-web-compat lib/index.js（新增） | 优先 `openPathChooser`，回退旧 `openNativePath`；聊天 mention 与工具行路径点击统一走它 |
+波形主显示使用 `waveformSamples[72]`（有符号 PCM，Homerail 实时输入仪表的 6 倍显示增益及 0.24/0.76 时间平滑）；`waveform[34]` 保留为幅度数据。VAD 使用 `VoiceActivityGate` 最近 2 秒 RMS 第 20 百分位的 3 倍作为自适应门槛（0.0003–0.012），并要求连续 60ms 阳性；5 秒无有效人声结束。原始 PCM 不增益。`voiceStatus` 暴露 `inputRms`/`vadThreshold`，debug 的 `desktopVoiceStatus` 同时包含实际输入设备、这两项数值及静音计时；不包含录音或转录正文。极低信噪比仍可能漏检。硬件 Ctrl +/-/0 由 MainActivity 转发 `dsh-content-font-shortcut`（increase/decrease/reset）给响应式字体插件，禁止壳直接设置缩放。
 
-JS 接口计数：**33**（0.13.6 为 34：+openPathChooser、−downloadDebugLogs、−pickImage；0.13.7fx-1 −pickFilePath、+settingsPath）。
-`<input type=file>` 的 `onShowFileChooser` 通道保留（上游附件按钮依赖）。
+### 手柄桥（2026-09-09，本地开发）
 
+`gamepadLease(epoch: Int, enabled: Boolean)`：页面每 750ms 续租，2.5 秒到期；仅前台受信任引擎页有效。`gamepadStatus(): String`：返回 available/devices，不返回用户会话数据。事件 `dsh-gamepad-input` 的 detail 为 kind、source、deviceId、epoch、seq、button、pressed、repeat、timestampMs；reset 撤销按住状态。语义由插件决定，原生不操作会话。voiceStatus 新增 inputDevice、inputDeviceType、inputDeviceId，表示实际录音路由。
+
+L2 扩展（2026-09-09）：原生 `KEYCODE_BUTTON_L2=104` 发 `button:l2`，Web 标准按钮索引 6；TS 边沿触发 `sidebar`，Deck 调现有 `ctx.layout.toggleSidebar()`。不改会话绑定或语音状态；宽度变化后保持活动泳道完整可见。
+
+○ 扩展（2026-09-09）：`KEYCODE_BUTTON_B=97` → `button:east`；Web 标准索引 1。TS 边沿发送当前草稿，沿用原版 InputBar 提交守卫；不映射通用 BACK/4，不将 ○ 解释为停止 Agent。
+
+## 折叠过渡（本地 2026-09-10）
+
+- `foldConfigure(enabled: boolean): void`：主线程开关原生模糊层。插件根据用户开关及 prefers-reduced-motion 设置；卸载插件时关闭。
+- `foldStatus(): string`：线程安全 JSON，enabled/phase/generation/transitions/completed/blurSupported/旧新窗口尺寸；不包含聊天内容。
+- `foldReady(generation: number): void`：插件收到 `dsh-fold-transition` 事件后等待双 rAF，再通知原生等待 WebView visual-state callback；过期 generation 忽略。
+- 事件 detail 为 `{generation,width,height}`，尺寸为 Android 像素，不能用作 CSS dp。UI 按容器宽度排版。无插件响应时原生必须按时清理。
+
+### 折叠续接入口（2026-09-10）
+
+`openFoldSettings()`：打开小米系统“合盖显示设置”，非小米/入口被拒时回退到显示设置。只导航，不写设置、不解锁。`foldStatus()` 增加 hingeAvailable/hingeListening/hingeDegrees/hingeEvents/hingeTransitions/blurRadius/trigger/foreground/pendingResume，用于真实铰链与恢复时序验收。
+
+`setChromeTheme(color, dark)`：只接受 #RRGGBB，主线程更新系统栏颜色/图标、WebView 和容器背景。responsive ThemePresenter 在解析完实际应用主题后调用；不修改 Android 系统主题或用户设置。
+
+折叠增量（2026-09-10）：`foldStatus` 增加 `blurMode=horizontal-gradient`、`blurAmount`、`blurExtent`、`sigmaLeftPx/CenterPx/RightPx`、`shaderError`；`blurSupported` 改为 API 33+ 且无着色器异常，`usedSnapshot` 保留兼容字段但恒 false。`foldPreview(amount: number)` 仅 debug 执行，前台非锁屏且插件启用时调用生产渲染器，最多 4 秒自动清除，用于 GPU 像素验收，不发送消息、不读取会话；release 调用无效果。
+
+诊断增量：`foldDualProbe(boolean)` / `foldDualStatus()` 仅 debug 有效；在应用 UID 验证已从系统配置确认的 lhasa presentation 状态 5，最多 15 秒，后台关闭；报告错误、显示列表、Presentation 状态，不包含会话内容。
+
+`foldDualObserve()` 仅 debug 在已点亮的第二显示屏启动 15 秒只读镜像；不请求显示状态、不借用电脑授权。通过 `foldDualStatus` 的 mirrorShowing/mirrorFrames/mirrorError 读取渲染结果。
+
+`foldSetup()`：打开原生双屏授权引导，仅展示状态并等待用户确认；不直接授权。启用折叠插件首次检测缺授权也会自动显示。通知配对通过非导出的前台服务 PendingIntent 接收用户六位码，不通过 JS/引擎接口。
+
+- Debug `foldProjectionPreview(angle: number)`：0–180° 有限值，在前台未锁屏时用生产外屏投影 renderer 做预览；主屏状态四秒清除，副屏随十五秒上限的 dual observe 清除；仅当 probe 的 clearSourceReady 为 true 时预览内屏投影边界（边界右侧清晰、左侧模糊）。不请求屏幕电源、不写权限、不注入真实传感器。
+
+- Debug dual observe 在外屏为主屏时同样启用有界的 FoldSharedCanvas，关闭观察恢复原宽度；投影预览根据主屏物理角色应用外屏/内屏公式。
+
+### 外屏正文起点查询（2026-09-11）
+
+插件 → 壳查询：`window.__dshNavigationInset(widthCssPx): number`，返回指定画布宽度下侧栏所占的 CSS px（移动抽屉为 0；折叠栏通常为 56）。只描述几何，不修改 DOM 或折叠配置。壳将结果乘 devicePixelRatio 并限制到可裁范围，设置外屏 View translationX；内屏清晰源不含该父级变换。取消了曾经造成内屏手机布局回归的 `__dshPhysicalViewport` 事件与状态。debug dual status 的 coverContentOffsetPx 用于检查裁取与清理。
+
+历史 `secondary-display-enable` 的 leasedState=1 是副屏启用租约；2026-09-11候选已替换为下述 stable-presentation，leasedState=5 是真实系统展示状态。诊断脚本必须按 mode 区分，不能沿用旧字段含义。
+
+
+### Fold 窗口宿主验证（2026-09-11，debug only）
+
+`foldHostPreview(cover: boolean)`：在现有自动 state 5 租约内，覆盖端点宿主选择15秒；true 将同一个 WebView 迁到可交互外屏 Presentation，false接回内屏。不会请求新显示状态或改铰链角度。结束后按真实角度恢复，测试 finally 应调用 false。公开 `foldStatus().dual` 新增 mode=`stable-presentation`、hostReady；primaryCover 表示编辑器宿主，不能当作系统主屏身份。跨宿主必须等待 hostReady，再检查页面连续性、原生窗口焦点和键盘 inset。
+
+### hasHardwareKeyboard（2026-09-11）
+
+`window.androidBridge.hasHardwareKeyboard(): boolean` 为同步只读查询，不要求新权限。每次枚举 Android InputDevice，仅非虚拟、SOURCE_KEYBOARD 且 KEYBOARD_TYPE_ALPHABETIC 设备返回 true；虚拟输入法、游戏手柄与鼠标不计入。工作台以此决定自动聚焦，实际键盘插拔状态实时读取。无此桥的旧 Android 壳默认不自动聚焦；非 Android 网页以桌面精细指针媒体查询作兼容判断。
+
+
+## 2026-09-12 语音引擎诊断补充
+
+`voiceStatus()`新增`engine: kleidiai|compatibility`与`engineReady`，仅诊断字段，不追加聊天标签。debug包`voiceTestSample(id, compatibility)`读取固定debug asset并走原生生产SSE解析；校验前台/空闲/请求ID，不允许任意路径、不启动麦克风、不提交会话。非debug直接拒绝。正式语音默认优化引擎，加载失败或转录进程退出才有限回退，取消不重试。见仓库docs/VOICE-KLEIDIAI-PRODUCTION.md。
