@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "llamaRevision": "df750f76bb6126566621803b69ddaeb993be5b08",
+  "kleidiaiVersion": "1.24.0",
+  "abi": "arm64-v8a",
+  "ndk": "27.2.12479018",
+  "elfLoadAlignmentBytes": 16384,
+  "default": "kleidiai-cpu",
+  "sme": "runtime detection; no forced architecture",
+  "compatibility": "legacy CPU (Vulkan-capable binary)",
+  "files": {
+    "libdsh_voice_server.so": {
+      "sha256": "77e823a2a16ba251b09e658e372e6db8847165f2f66cb1f3468ed8e9b9343fab",
+      "bytes": 14315568
+    },
+    "libdsh_voice_compat.so": {
+      "sha256": "73a45c815e82e7e51363d72fa1e36c3e2ab3070b053cbbdbb92a35ed5e490d8d",
+      "bytes": 40233576
+    }
+  },
+  "licenses": {
+    "voice-llama.cpp-MIT.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "voice-android-ndk-toolchain-NOTICE.txt": "cbe3237be53c0a819f8df6aac5358fdee848eee3b6571b4e2ca20767ebd7465e",
+    "voice-KleidiAI-BSD-3-Clause.txt": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d",
+    "voice-android-ndk-NOTICE.txt": "4d5224d1c0b54ffa88b0dc0088191638fdbb7227835095dfb98f7f66b416a323",
+    "voice-KleidiAI-Apache-2.0.txt": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+    "voice-cpp-httplib-LICENSE": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b",
+    "voice-KleidiAI-NOTICE.txt": "d42e0b0a3cb1ca4036366fc8a0fbf853ece6a2e857e8ced77e6d59ee06e882c0"
+  }
+}

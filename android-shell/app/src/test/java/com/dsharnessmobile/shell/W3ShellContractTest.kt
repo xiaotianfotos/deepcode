@@ -46,25 +46,22 @@ class W3ShellContractTest {
     return rest.substring(0, cut)
   }
 
-  // ── FX-212.1：hidePanel 必须收口 pickerWindow（独立顶层窗口） ────────────────
-
+  // DeepCode uses the current session and an inline editor, not the upstream picker window.
   @Test
-  fun hidePanelClosesThePickerWindowBeforeTheEarlyReturn() {
+  fun hidingCompanionClearsEditorBeforeRemovingItsWindow() {
     val body = memberBody(codeOnly(source("OverlayService.kt")), "internal fun hidePanel()")
-    assertTrue(
-      "FX-212.1：收起面板必须调 OverlayPanel.closePicker()（否则选择器顶层窗口留在屏上）",
-      body.contains("panel.closePicker()"),
-    )
-    val closeAt = body.indexOf("panel.closePicker()")
+    val closeAt = body.indexOf("panel.collapseEditor()")
     val earlyReturnAt = body.indexOf("panel.unitView ?: return")
-    assertTrue("FX-212.1：收口必须在 unitView 早退之前（视图缺失时也不能漏收）", earlyReturnAt < 0 || closeAt < earlyReturnAt)
+    assertTrue(closeAt >= 0 && closeAt < earlyReturnAt)
+    assertTrue(body.contains("wm.removeView(unit)"))
   }
 
   @Test
-  fun pickerWindowIsOwnedAndClosedByOverlayPanel() {
-    val code = codeOnly(source("OverlayPanel.kt"))
-    assertTrue("选择器仍是独立窗口（本缺陷的前提）", code.contains("pickerWindow = container"))
-    assertTrue("收口入口 = closePicker()（removeView + 清引用）", code.contains("svc.wm.removeView(w)"))
+  fun collapsingInlineEditorReleasesImeAndFocus() {
+    val body = memberBody(codeOnly(source("OverlayPanel.kt")), "internal fun collapseEditor()")
+    assertTrue(body.contains("hideSoftInputFromWindow"))
+    assertTrue(body.contains("clearFocus()"))
+    assertTrue(body.contains("View.GONE"))
   }
 
   // ── FX-212.2：预算与文案同一真源，且调用点不再出现字面量秒数 ────────────────

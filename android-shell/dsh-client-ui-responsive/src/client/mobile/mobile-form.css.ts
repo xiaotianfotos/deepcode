@@ -22,7 +22,7 @@ export const MOBILE_FORM_CSS: string = `
   --dsh-mobile-topbar-height: 44px;
 }
 
-@media (max-width: 767px) {
+html:is([data-dsh-mobile-form], [data-dsh-fold-workbench]) {
   [data-dsh-frame] {
     grid-template-columns: 0 minmax(0, 1fr) 0 !important;
   }

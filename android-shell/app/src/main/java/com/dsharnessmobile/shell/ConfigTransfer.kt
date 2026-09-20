@@ -105,13 +105,16 @@ internal class DirectoryPickerController(private val activity: MainActivity) {
           } catch (_: SecurityException) {
             // 部分 ROM 返回非 persistable 授权：降级为会话内有效，不阻断 pick。
           }
-          // Android 10（API 29）：SAF 授权 ≠ 引擎 raw path 写权限（scoped storage FUSE 拦截，
-          // 方案 B）——经既有 ADB 授权链解锁 appop LEGACY_STORAGE（shell uid 持
-          // MANAGE_APP_OPS_MODES），异步执行不阻塞 pick 结算；真机验证归 Phase 5。
-          if (android.os.Build.VERSION.SDK_INT == 29) {
-            activity.unlockLegacyStorageApi29()
+          val path = try {
+            WorkspaceStorage.resolveWritable(activity, uri)
+          } catch (error: Exception) {
+            val reason = when (error) {
+              is IllegalArgumentException -> error.message ?: "unsupported-storage"
+              is SecurityException -> "permission-denied"
+              else -> "storage-not-writable"
+            }
+            MainActivity.PICK_REFUSED_PREFIX + reason
           }
-          val path = AndroidBridge.resolvePickedPath(uri)
           activity.webView.evaluateJavascript(
             "window.__dshBridge?.onDirectoryPicked?.(" + jsString(callback) + ", " + jsString(path) + ")", null,
           )
@@ -152,12 +155,13 @@ internal class DirectoryPickerController(private val activity: MainActivity) {
       pendingPickCallback = null
       pendingPermissionRequest = false
       if (callback == null) return@registerForActivityResult
-      val granted = !grants.values.contains(false)
+      val granted = grants.isNotEmpty() && !grants.values.contains(false)
       if (granted) {
         // 授权成功：占槽 + 起 SAF 树选择器（外部工作区=真实路径）。
         pendingPickCallback = callback
         pickTtlHandler.removeCallbacks(pickTtlRunnable)
         pickTtlHandler.postDelayed(pickTtlRunnable, 5 * 60_000L)
+        if (android.os.Build.VERSION.SDK_INT == 29) activity.unlockLegacyStorageApi29()
         directoryPicker.launch(null)
       } else {
         // 用户拒绝存储权限：显式拒绝（reason=permission-denied），不再静默取消。
@@ -187,14 +191,14 @@ internal class DirectoryPickerController(private val activity: MainActivity) {
             android.content.pm.PackageManager.PERMISSION_GRANTED
         if (hasRead && hasWrite) {
           pendingPickCallback = callbackId
-          pendingPermissionRequest = true
+          pendingPermissionRequest = false
           pickTtlHandler.removeCallbacks(pickTtlRunnable)
           pickTtlHandler.postDelayed(pickTtlRunnable, 5 * 60_000L)
           directoryPicker.launch(null)
           return
         }
         pendingPickCallback = callbackId
-        pendingPermissionRequest = true
+        pendingPermissionRequest = false
         pickTtlHandler.removeCallbacks(pickTtlRunnable)
         pickTtlHandler.postDelayed(pickTtlRunnable, 5 * 60_000L)
         storagePermLauncher.launch(
@@ -211,7 +215,7 @@ internal class DirectoryPickerController(private val activity: MainActivity) {
       // （hasWrite 恒 true），拒绝分支为不可达死代码——现显式请求 READ+WRITE
       // （manifest WRITE 上限已提至 29），授权后经通用 resume 流进 SAF 树选择器。
       pendingPickCallback = callbackId
-      pendingPermissionRequest = true
+      pendingPermissionRequest = false
       pickTtlHandler.removeCallbacks(pickTtlRunnable)
       pickTtlHandler.postDelayed(pickTtlRunnable, 5 * 60_000L)
       storagePermLauncher.launch(
@@ -263,7 +267,7 @@ internal class DirectoryPickerController(private val activity: MainActivity) {
    *  SAF，仍拒绝则按取消结算（引擎请求不挂到 5 分钟 TTL）。
    *  （自 MainActivity.onResume 迁入。） */
   fun settlePendingOnResume() {
-    if (pendingPickCallback != null) {
+    if (pendingPickCallback != null && pendingPermissionRequest) {
       val granted = android.os.Build.VERSION.SDK_INT >= 30 &&
         android.os.Environment.isExternalStorageManager()
       Log.i("dsh-shell", "M3 resume: pendingPick=" + pendingPickCallback + " granted=" + granted + " permFlag=" + pendingPermissionRequest)
@@ -278,7 +282,8 @@ internal class DirectoryPickerController(private val activity: MainActivity) {
         if (callback != null) {
           try {
             activity.webView.evaluateJavascript(
-              "window.__dshBridge?.onDirectoryPicked?.(" + jsString(callback) + ", null)", null,
+              "window.__dshBridge?.onDirectoryPicked?.(" + jsString(callback) + ", " +
+                jsString(MainActivity.PICK_REFUSED_PREFIX + "permission-denied") + ")", null,
             )
           } catch (_: Exception) {
           }
@@ -352,4 +357,3 @@ internal class MediaPickController(private val activity: MainActivity) {
   }
 
 }
-

@@ -83,6 +83,8 @@ class EngineService : Service() {
 
   /** User-requested shutdown: stop the watchdog + engine (no auto-restart). */
   fun requestShutdown() {
+    stopService(Intent(this, BackgroundVoiceService::class.java))
+    stopService(Intent(this, LiveVoiceService::class.java))
     userShutdown = true
     watchdog?.shutdownNow()
     watchdog = null

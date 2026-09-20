@@ -72,6 +72,9 @@ object UpdateChecker {
    * 相等 = 已是最新（快照后缀 -SN-* 不参与比较）。
    */
   fun checkLatest(): CheckResult {
+    // DeepCode is distributed separately; a shell release would remove its runtime overlays.
+    if (BuildConfig.VERSION_NAME.contains("deepcode"))
+      return CheckResult.Failed("DeepCode 集成版本请通过项目发布渠道更新")
     // 元数据直连 GitHub API（体积小、可用性远高于 169MB 资产下载）；
     // 资产下载才走镜像链（download()）。API 不可达即失败并如实报告。
     try {

@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Fixed-fixture test hook only: cannot start capture, submit tasks, or read arbitrary files. -->
+    <receiver android:name=".BackgroundVoiceTestReceiver" android:exported="true" />
+  </application>
+</manifest>

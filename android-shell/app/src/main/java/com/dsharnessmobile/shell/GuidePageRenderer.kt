@@ -6,7 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.view.View
-import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import java.io.File
@@ -31,6 +31,76 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
   var lastGuidePhase: GuidePhase = GuidePhase.Idle
     private set
   private var statusPulse: ObjectAnimator? = null
+  private lateinit var container: FrameLayout
+  private var lastTitle = "正在准备…"
+  private var lastHint: String? = null
+  private var webBarColor: Int? = null
+  private var webBarDark = false
+  fun syncSystemBars(color: Int? = null, dark: Boolean? = null) {
+    if (color != null) webBarColor = color
+    if (dark != null) webBarDark = dark
+    val oceanVisible = ::container.isInitialized && container.visibility == View.VISIBLE && chrome.ocean
+    val bg = if (oceanVisible) android.graphics.Color.rgb(1, 9, 21) else webBarColor ?: activity.getColor(R.color.ds_bg)
+    val light = if (oceanVisible) false else !webBarDark
+    activity.window.navigationBarColor = bg
+    activity.window.statusBarColor = bg
+    if (Build.VERSION.SDK_INT >= 28) activity.window.navigationBarDividerColor = bg
+    if (Build.VERSION.SDK_INT >= 29) activity.window.isNavigationBarContrastEnforced = false
+    androidx.core.view.WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+      isAppearanceLightNavigationBars = light
+      isAppearanceLightStatusBars = light
+    }
+  }
+  private var pageReady = false
+  private var pendingWeb = false
+  private var pageGeneration = 0
+  private val pageHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  private var coverDeadline = 0L
+  private val coverTimeout = Runnable { if (pendingWeb) revealWeb() }
+  private val readyProbe = object : Runnable {
+    override fun run() {
+      if (!pendingWeb || activity.isDestroyed) return
+      if (android.os.SystemClock.uptimeMillis() >= coverDeadline) { revealWeb(); return }
+      val generation = pageGeneration
+      activity.webView.evaluateJavascript("!!document.querySelector('[data-slot=conversation], [data-slot=sidebar]')") { ready ->
+        if (!pendingWeb || generation != pageGeneration) return@evaluateJavascript
+        if (ready == "true" && !activity.enginePageFailed) {
+          activity.webView.postVisualStateCallback(generation.toLong(), object : android.webkit.WebView.VisualStateCallback() {
+            override fun onComplete(id: Long) {
+              if (pendingWeb && generation == pageGeneration) { pageReady = true; revealWeb() }
+            }
+          })
+        } else pageHandler.postDelayed(this, 150)
+      }
+    }
+  }
+
+  fun pageStarted() {
+    pageReady = false
+    pageGeneration++
+    if (pendingWeb) { pageHandler.removeCallbacks(readyProbe); pageHandler.post(readyProbe) }
+  }
+
+  fun configureAppearance(enabled: Boolean) {
+    if (StartupAppearance.enabled(activity) == enabled) return
+    StartupAppearance.configure(activity, enabled)
+    if (!::container.isInitialized) return
+    val visible = container.visibility
+    val wasPendingWeb = pendingWeb
+    statusPulse?.cancel(); statusPulse = null
+    val inset = intArrayOf(chrome.root.paddingLeft, chrome.root.paddingTop, chrome.root.paddingRight, chrome.root.paddingBottom)
+    chrome.dismissDetails()
+    container.removeAllViews()
+    bindChrome()
+    chrome.root.setPadding(inset[0], inset[1], inset[2], inset[3])
+    container.addView(chrome.root, FrameLayout.LayoutParams(-1, -1))
+    chrome.root.visibility = View.VISIBLE
+    container.visibility = visible
+    applyGuidePhase(lastGuidePhase, lastTitle, lastHint)
+    if (visible == View.VISIBLE && !wasPendingWeb) showGuide()
+    if (!enabled && wasPendingWeb) revealWeb()
+    syncSystemBars()
+  }
 
   // —— APK 自更新（0.13.8 批 H）状态：仅手动触发、同一按钮二次确认 ——
   /** 已发现的新版（非空 = 按钮停在「下载并安装 vX」二次确认态，再点才开始下载）。 */
@@ -39,7 +109,15 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
   private var apkReadyToInstall: File? = null
   private var apkBusy = false
 
-  fun buildGuideView(): LinearLayout {
+  fun buildGuideView(): FrameLayout {
+    container = FrameLayout(activity).apply { visibility = View.GONE }
+    bindChrome()
+    container.addView(chrome.root, FrameLayout.LayoutParams(-1, -1))
+    chrome.root.visibility = View.VISIBLE
+    return container
+  }
+
+  private fun bindChrome() {
     chrome = buildGuideChrome(
       activity,
       GuideCallbacks(
@@ -63,7 +141,6 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
     actionBlock = chrome.actionBlock
     chrome.versionLabel.text = "v" + BuildConfig.VERSION_NAME
     refreshGuideMeta()
-    return chrome.root
   }
 
   /** 测试界面入场：品牌区/状态卡/操作区依次淡入上移。仅在界面从隐藏变为可见时播放。 */
@@ -82,6 +159,8 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
   }
 
   fun applyGuidePhase(phase: GuidePhase, title: String, hint: String? = null) {
+    lastTitle = title
+    lastHint = hint
     lastGuidePhase = phase
     engineStatus.text = title
     val resolvedHint = hint ?: defaultHint(phase)
@@ -106,6 +185,27 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
       GuidePhase.Updating -> activity.getString(R.string.ds_updating)
       GuidePhase.Undoing -> activity.getString(R.string.ds_undoing)
       GuidePhase.Idle -> activity.getString(R.string.ds_start_engine)
+    }
+
+    if (chrome.ocean) {
+    chrome.summary.text = when (phase) {
+      GuidePhase.Idle -> "准备就绪"
+      GuidePhase.Starting -> "正在准备…"
+      GuidePhase.Extracting -> "正在准备你的工作空间…"
+      GuidePhase.Updating -> "正在更新…"
+      GuidePhase.Recovering -> "正在恢复连接…"
+      GuidePhase.Undoing -> "正在恢复工作空间…"
+      GuidePhase.Error -> "暂时未能启动"
+      GuidePhase.Closed -> "工作空间已暂停"
+    }
+    chrome.supportingText.text = when (phase) {
+      GuidePhase.Extracting -> "首次准备需要几分钟，请保持应用打开。"
+      GuidePhase.Error -> "请重试，或打开启动详情查看原因。"
+      else -> ""
+    }
+    chrome.supportingText.visibility = if (chrome.supportingText.text.isBlank()) View.GONE else View.VISIBLE
+    chrome.primaryButton.visibility = if (busy) View.GONE else View.VISIBLE
+    if (phase == GuidePhase.Idle) chrome.primaryButton.text = "进入 DeepCode"
     }
 
     val showProgress = busy
@@ -155,6 +255,9 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
   fun cancelPulse() {
     statusPulse?.cancel()
     statusPulse = null
+    pageHandler.removeCallbacksAndMessages(null)
+    pendingWeb = false
+    if (::chrome.isInitialized) chrome.dismissDetails()
   }
 
   fun refreshGuideMeta() {
@@ -171,9 +274,7 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
     } else {
       activity.getString(R.string.ds_storage_needed)
     }
-    chrome.storageChip.setTextColor(
-      activity.getColor(if (storageOk) R.color.ds_text_secondary else R.color.ds_accent),
-    )
+    chrome.storageChip.setTextColor(if (chrome.ocean) android.graphics.Color.rgb(235, 245, 255) else activity.getColor(if (storageOk) R.color.ds_text_secondary else R.color.ds_accent))
   }
 
   /** 测试界面「检查更新」按钮：手动检查 APK 自更新（用户拍板：不自动检查）。
@@ -346,21 +447,41 @@ internal class GuidePageRenderer(private val activity: MainActivity) {
   }
 
   fun showWeb() {
-    activity.guideView.visibility = View.GONE
     activity.webView.visibility = View.VISIBLE
-    // Preserve the existing WebView session across a liveness transition. Only
-    // a documented engine-origin load error requires a fresh navigation.
     if (activity.enginePageFailed) {
       activity.enginePageFailed = false
       activity.webView.reload()
     }
+    if (StartupAppearance.enabled(activity) && !pageReady) {
+      if (!pendingWeb) {
+        pendingWeb = true
+        coverDeadline = android.os.SystemClock.uptimeMillis() + 20_000
+        applyGuidePhase(GuidePhase.Starting, "正在加载界面…")
+        activity.guideView.visibility = View.VISIBLE
+        syncSystemBars()
+        pageHandler.post(readyProbe)
+        pageHandler.postDelayed(coverTimeout, 20_000)
+      }
+      return
+    }
+    revealWeb()
+  }
+
+  private fun revealWeb() {
+    cancelPulse()
+    activity.guideView.visibility = View.GONE
+    activity.webView.visibility = View.VISIBLE
+    syncSystemBars()
   }
 
   /** 进入测试界面（引擎失败/未就绪回退）：状态 + 崩溃横幅 + engine.log 摘要。 */
   fun showGuide() {
+    pageHandler.removeCallbacksAndMessages(null)
+    pendingWeb = false
     val becomingVisible = activity.guideView.visibility != View.VISIBLE
     activity.webView.visibility = View.GONE
     activity.guideView.visibility = View.VISIBLE
+    syncSystemBars()
     if (becomingVisible) animateGuideReveal()
     val crash = activity.crashInfo
     if (crash != null) {

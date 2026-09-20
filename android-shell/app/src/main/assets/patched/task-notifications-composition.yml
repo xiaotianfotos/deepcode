@@ -1,0 +1,5 @@
+
+# bundled-task-notifications-plugin
+- insert:
+    - id: task-notifications
+      name: '@dsh-android/dsh-task-notifications'

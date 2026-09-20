@@ -1,70 +1,70 @@
-/**
- * Mobile settings-panel adaptation (issue #1; 2026-09-03 rework, 2026-09-10 de-fork).
- * Upstream SettingsRoot draws a fixed overlay with an 800px two-column panel
- * (nav + options). On the phone form it must reflow to a single column and fill
- * the viewport (user requirement: 设置页全屏显示).
- *
- * The panel renders inside the sidebar subtree, whose CSS-Module class names are
- * hashed and unreachable from here — and its own markup carries no stable
- * attribute. The mobile marker therefore tags the panel
- * (`data-dsh-settings-dialog`, written from its nav/content structure) and this
- * sheet keys on that tag plus the phone-form flag: pure attribute selectors,
- * effective on old kernels too (no `:has()`).
+/** Fullscreen settings in the Android drawer: left categories, right content.
+ * Fold's workbench also uses this drawer at desktop widths, so never infer
+ * horizontal tabs from the drawer ancestor. Each column scrolls independently.
  */
 export const MOBILE_SETTINGS_CSS: string = `
   html[data-dsh-mobile-form] [data-dsh-settings-dialog] {
-    box-sizing: border-box;
     width: 100vw;
     max-width: none;
-    /* The panel is centred by its fixed overlay, so shrinking the height would
-       move its header back under the status bar. Keep the full height and inset
-       the content instead: border-box keeps the total box at 100vh. */
     height: 100vh;
+    height: 100dvh;
     max-height: none;
-    padding-top: var(--dsh-mobile-top-inset, 0px);
     border-radius: 0;
-    flex-direction: column;
+    flex-direction: row;
   }
 
   html[data-dsh-mobile-form] [data-dsh-settings-dialog] > nav {
-    width: 100%;
-    height: auto;
+    width: clamp(124px, 23vw, 188px);
+    min-height: 0;
+    height: 100%;
     flex: none;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    overflow-x: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--dsw-alias-border-l1);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 18px 8px 12px;
+    overflow: hidden;
+    border-right: 1px solid var(--dsw-alias-border-l1);
+    border-bottom: none;
   }
 
   html[data-dsh-mobile-form] [data-dsh-settings-dialog] > nav > div:first-child {
     flex: none;
-    padding: 0;
+    padding: 0 8px;
     white-space: nowrap;
   }
 
   html[data-dsh-mobile-form] [data-dsh-settings-dialog] > nav > div:nth-child(2) {
-    flex-direction: row;
+    flex-direction: column;
     gap: 4px;
     flex: 1;
+    min-height: 0;
     min-width: 0;
-    overflow-x: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
   }
 
   html[data-dsh-mobile-form] [data-dsh-settings-dialog] > nav > div:nth-child(2) > button {
-    /* Review 2026-08-18: the original rule was an unclosed empty block since #2 and never
-       applied. Completed by container semantics: the nav button container is
-       flex-direction: row + overflow-x: auto, so buttons need flex: none to avoid being
-       compressed and to scroll horizontally with the container. */
     flex: none;
+    min-height: 40px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 
-  /* Content column: flex:1 but min-height:auto would hold the options scroll area's
-     full content height and overflow the panel; allow it to shrink so the options
-     area scrolls inside. */
   html[data-dsh-mobile-form] [data-dsh-settings-dialog] > div:nth-child(2) {
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Keep the close control reachable while settings content scrolls. */
+  html[data-dsh-mobile-form] [data-dsh-settings-dialog] > div:nth-child(2) > div:first-child {
+    flex-shrink: 0;
+    min-height: 52px;
+    padding: 4px 8px;
+  }
+  html[data-dsh-mobile-form] [data-dsh-settings-dialog] > div:nth-child(2) > div:first-child > button {
+    min-width: 44px;
+    min-height: 44px;
   }
 `

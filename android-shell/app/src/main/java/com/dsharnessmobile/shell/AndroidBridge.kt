@@ -12,6 +12,14 @@ import org.json.JSONObject
  * window.__dshBridge.onDirectoryPicked(callbackId, path) on the main thread.
  */
 class AndroidBridge(
+  private val onStartupConfigure: (Boolean) -> Unit = {},
+  private val onStartupEnabled: () -> Boolean = { false },
+  private val onSpeechSession: (String, String, Boolean) -> Unit = { _, _, _ -> },
+  private val onLiveVoiceSession: (String,Boolean) -> Unit = { _, _ -> },
+  private val onLiveVoiceStop: () -> Unit = {},
+  private val onLiveVoiceStart: (String) -> String = { "{\"ok\":false}" },
+  private val onLiveVoiceRelease: () -> Unit = {},
+  private val onLiveVoiceOpen: (String) -> Unit = {},
   private val onPickRequest: (callbackId: String) -> Unit,
   private val onKeepScreen: (enable: Boolean) -> Unit,
   private val onNotify: (title: String, text: String) -> Unit,
@@ -63,6 +71,22 @@ class AndroidBridge(
   private val onGetOverlayEnabled: () -> Boolean = { false },
   /** 0.13.2 W7：悬浮球开关（未授 overlay 权限时由控制器发起系统授权引导）。返回是否已启动。 */
   private val onSetOverlayEnabled: (Boolean) -> Boolean = { _ -> false },
+  private val voice: VoiceInputController? = null,
+  private val performance: PerformanceSampler? = null,
+  private val onGamepadLease: (Int, Boolean) -> Unit = { _, _ -> },
+  private val onFoldConfigure: (Boolean) -> Unit = {},
+  private val onFoldReady: (Int) -> Unit = {},
+  private val onFoldStatus: () -> String = { "{}" },
+  private val onFoldPreview: (Float) -> Unit = {},
+  private val onFoldHostPreview: (Boolean) -> Unit = {},
+  private val onFoldDualProbe: (Boolean) -> Unit = {},
+  private val onFoldDualStatus: () -> String = { "{}" },
+  private val onFoldDualObserve: () -> Unit = {},
+  private val onFoldSetup: () -> Unit = {},
+  private val onFoldProjectionPreview: (Float) -> Unit = {},
+  private val onOpenFoldSettings: () -> Unit = {},
+  private val onChromeTheme: (String, Boolean) -> Unit = { _, _ -> },
+  private val onGamepadStatus: () -> String = { "{}" },
   /** 0.13.5 W4：无障碍控制通道状态 JSON {enabled, label, restrictedHint}。 */
   private val onA11yStatus: () -> String = { """{"enabled":false}""" },
   /** 0.13.5 W4：跳系统无障碍设置页（用户手动开启「DSH 设备控制」）。 */
@@ -70,6 +94,79 @@ class AndroidBridge(
   /** 0.13.5 W4：一键解锁受限设置（Android 13+ 侧载应用默认禁止开启无障碍）。返回 JSON {ok, message}。 */
   private val onUnlockRestrictedSettings: () -> String = { """{"ok":false,"message":"未接线"}""" },
 ) {
+
+  @JavascriptInterface fun remoteConfigure(config: String) { RemoteInput.configure(config) }
+  @JavascriptInterface fun remoteLease(active: Boolean) { RemoteInput.lease(active) }
+  @JavascriptInterface fun remoteKeyName(code: Int): String = android.view.KeyEvent.keyCodeToString(code).removePrefix("KEYCODE_")
+  @JavascriptInterface fun desktopVoiceStatus(): String {
+    if (!BuildConfig.DEBUG) return "{}"
+    val s = BackgroundVoiceService.snapshot
+    return JSONObject().put("phase",s.optString("phase")).put("stopReason",s.optString("stopReason"))
+      .put("autoStopped",s.optBoolean("autoStopped")).put("capturedMs",s.optInt("capturedMs"))
+      .put("inputDevice",s.optString("inputDevice")).put("inputDeviceType",s.optString("inputDeviceType"))
+      .put("inputRms",s.optDouble("inputRms",0.0)).put("vadThreshold",s.optDouble("vadThreshold",0.0))
+      .put("speechDetected",s.optBoolean("speechDetected")).put("silenceMs",s.optInt("silenceMs"))
+      .put("lastSpeechMs",s.optInt("lastSpeechMs")).put("level",s.optDouble("level",0.0))
+      .put("textLength",s.optString("text").length).put("error",s.optString("error")).toString()
+  }
+  @JavascriptInterface fun remoteStatus(): String = RemoteInput.status()
+  @JavascriptInterface fun remoteCaptureBegin(device: String): String = RemoteInput.captureBegin(device)
+  @JavascriptInterface fun remoteCaptureCancel(id: String) { RemoteInput.captureCancel(id) }
+
+  @JavascriptInterface fun notificationSurface(ids:String) { NotificationAttention.updateVisible(ids) }
+
+  @JavascriptInterface fun speechPlaybackContext(): String = JSONObject()
+    .put("foreground",SpeechSessionFocus.foreground)
+    .put("companion",OverlayService.instance?.expanded == true)
+    .put("microphone",VoiceInputController.microphoneInUse()).toString()
+
+  @JavascriptInterface fun speechOpenRequest(): String = SpeechSessionFocus.pendingOpen()
+  @JavascriptInterface fun speechOpenAck(id:String) { SpeechSessionFocus.ackOpen(id) }
+  @JavascriptInterface fun speechReplyStatus(): String = if(BuildConfig.DEBUG) OverlayService.instance?.speech?.replyStatus()?.toString()?:"{}" else "{}"
+
+  @JavascriptInterface fun speechSession(id:String,title:String,enabled:Boolean) { onSpeechSession(id.take(160),title.take(120),enabled) }
+
+  @JavascriptInterface fun foldConfigure(enabled: Boolean) { onFoldConfigure(enabled) }
+  @JavascriptInterface fun foldReady(generation: Int) { onFoldReady(generation) }
+  @JavascriptInterface fun foldStatus(): String = onFoldStatus()
+  @JavascriptInterface fun foldHostPreview(cover:Boolean){if(BuildConfig.DEBUG)onFoldHostPreview(cover)}
+  @JavascriptInterface fun foldSetup() { onFoldSetup() }
+  @JavascriptInterface fun foldProjectionPreview(angle:Double) { if(BuildConfig.DEBUG && angle.isFinite() && angle in 0.0..180.0)onFoldProjectionPreview(angle.toFloat()) }
+  @JavascriptInterface fun foldDualObserve() { if(BuildConfig.DEBUG) onFoldDualObserve() }
+  @JavascriptInterface fun foldDualProbe(enabled: Boolean) { if(BuildConfig.DEBUG) onFoldDualProbe(enabled) }
+  @JavascriptInterface fun foldDualStatus(): String = if(BuildConfig.DEBUG) onFoldDualStatus() else "{}"
+  @JavascriptInterface fun foldPreview(amount: Double) {
+    if (BuildConfig.DEBUG && amount.isFinite()) onFoldPreview(amount.toFloat())
+  }
+  @JavascriptInterface fun setChromeTheme(color: String, dark: Boolean) {
+    if (color.matches(Regex("#[0-9a-fA-F]{6}"))) onChromeTheme(color, dark)
+  }
+
+  @JavascriptInterface fun openFoldSettings() { onOpenFoldSettings() }
+
+  @JavascriptInterface fun gamepadLease(epoch: Int, enabled: Boolean) { onGamepadLease(epoch, enabled) }
+  /** Physical alphabetic keyboards only; touch keyboards and gamepads are not keyboards. */
+  @JavascriptInterface fun hasHardwareKeyboard(): Boolean = android.view.InputDevice.getDeviceIds().any { id ->
+    val device = android.view.InputDevice.getDevice(id)
+    device != null && !device.isVirtual &&
+      device.keyboardType == android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC &&
+      device.supportsSource(android.view.InputDevice.SOURCE_KEYBOARD)
+  }
+
+  @JavascriptInterface fun gamepadStatus(): String = onGamepadStatus()
+
+  @JavascriptInterface fun voiceStart(id: String): String = voice?.start(id) ?: "{\"ok\":false}"
+  @JavascriptInterface fun voiceTestSample(id: String, compatibility: Boolean): String =
+    if (BuildConfig.DEBUG) voice?.testSample(id, compatibility) ?: "{\"ok\":false}" else "{\"ok\":false}"
+  @JavascriptInterface fun voiceTestServiceSample(id: String): String =
+    if (BuildConfig.DEBUG) voice?.testServiceSample(id) ?: "{\"ok\":false}" else "{\"ok\":false}"
+  @JavascriptInterface fun voiceStatus(): String = voice?.status() ?: "{\"ok\":false}"
+  @JavascriptInterface fun voiceStop(id: String) { voice?.stop(id) }
+  @JavascriptInterface fun voiceCancel(id: String) { voice?.cancel(id) }
+  @JavascriptInterface fun voiceAcknowledge(id: String) { voice?.acknowledge(id) }
+  @JavascriptInterface fun voiceRelease() { voice?.release() }
+  @JavascriptInterface fun performanceSample(): String = performance?.sample() ?: "{\"ok\":false}"
+  @JavascriptInterface fun performanceReset() { performance?.reset() }
 
   @JavascriptInterface
   fun version(): String = BuildConfig.VERSION_NAME
@@ -160,6 +257,11 @@ class AndroidBridge(
     onAllFilesAccessRequest()
   }
 
+  @JavascriptInterface
+  fun startupConfigure(enabled: Boolean) { onStartupConfigure(enabled) }
+  @JavascriptInterface
+  fun startupEnabled(): Boolean = onStartupEnabled()
+
   /** One-shot session token for the directory-picker bridge (validated by the engine-side pick endpoint; null = disabled). */
   @JavascriptInterface
   fun getPickToken(): String? = pickToken
@@ -247,6 +349,16 @@ class AndroidBridge(
   @JavascriptInterface
   fun discoverAdbPorts(): String = onDiscoverAdbPorts()
 
+  @JavascriptInterface
+  fun liveVoiceOpen(sessionId: String) { if(sessionId.matches(Regex("session-[A-Za-z0-9-]+"))) onLiveVoiceOpen(sessionId) }
+  @JavascriptInterface
+  fun liveVoiceStatus(): String = LiveVoiceService.state.toString()
+  @JavascriptInterface
+  fun liveVoiceStop() = onLiveVoiceStop()
+  @JavascriptInterface fun liveVoiceSession(id:String,eligible:Boolean) = onLiveVoiceSession(id.take(160),eligible)
+  @JavascriptInterface fun liveVoiceRelease() = onLiveVoiceRelease()
+  @JavascriptInterface fun liveVoiceStart(sessionId:String):String = if(sessionId.matches(Regex("session-[A-Za-z0-9-]+"))) onLiveVoiceStart(sessionId) else "{\"ok\":false,\"error\":\"Invalid session\"}"
+
   /** 悬浮球开关态（持久化；开发者选项 → 悬浮球）。 */
   @JavascriptInterface
   fun getOverlayEnabled(): Boolean = onGetOverlayEnabled()
@@ -254,6 +366,7 @@ class AndroidBridge(
   /** 悬浮球开关（控制器负责权限引导）；返回当前是否已启动。 */
   @JavascriptInterface
   fun setOverlayEnabled(enable: Boolean): Boolean = onSetOverlayEnabled(enable)
+
 
   /** 0.13.5 W4：无障碍控制通道状态（设置页展示 + 引导）。 */
   @JavascriptInterface

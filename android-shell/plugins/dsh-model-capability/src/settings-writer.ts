@@ -7,7 +7,7 @@
  *   - only model-level entries are written — never a provider-wide setting;
  *   - the route's other keys and every other model's entry are left byte-identical;
  *   - one `set` on `providers.<route>.models` under the current revision, with a
- *     single re-read/retry on SETTINGS_CONFLICT (same protocol as model-sync).
+ *     single re-read/retry on SETTINGS_CONFLICT.
  *
  * 0.14.0-preview（ST-03 / F-PLUG-02）追加**来源戳**：
  *   「只填空」有一个已知代价——端点能力若后来变了（换网关、供应商升级），我们上一轮写下的旧值

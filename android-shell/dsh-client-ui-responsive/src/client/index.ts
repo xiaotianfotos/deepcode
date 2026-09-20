@@ -27,6 +27,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import { FoldContinuity } from './fold-continuity.ts'
+import { FontSizeGuard } from './font-size-guard.ts'
+import { TouchTooltipGuard } from './touch-tooltip-guard.ts'
+import { NativeInteractionGuard } from './native-interaction-guard.ts'
 import { ExportResultDialog } from './ExportResultDialog.tsx'
 import { MOBILE_SETTINGS_CSS } from './mobile-settings.css.ts'
 import { COMPOSER_MENU_CSS } from './composer-menu.css.ts'
@@ -84,6 +88,21 @@ function injectStyle(id: string, css: string): () => void {
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(() => {
+    const bridge = new FoldContinuity()
+    bridge.attach()
+    return () => bridge.detach()
+  }, 'ui-responsive: fold crop continuity')
+  ctx.effect(() => {
+    const guard = new NativeInteractionGuard()
+    guard.attach()
+    return () => guard.detach()
+  }, 'ui-layout: native interaction guard')
+  ctx.effect(() => {
+    const guard = new TouchTooltipGuard()
+    guard.attach()
+    return () => guard.detach()
+  }, 'ui-layout: touch tooltip guard')
   // ── Phone form ──────────────────────────────────────────────────────────
 
   // The narrow-form stylesheet: track/drawer geometry plus the top-inset and
@@ -141,6 +160,12 @@ export function apply(ctx: ClientContext): void {
       disposeStyle()
     }
   }, 'ui-responsive: trajectory details full-viewport overlay + :has() fallback')
+
+  ctx.effect(() => {
+    const guard = new FontSizeGuard(ctx.theme)
+    guard.attach()
+    return () => guard.detach()
+  }, 'ui-layout: content font keyboard shortcuts')
 
   // Mobile Enter guard: on the mobile form the soft-keyboard Enter key must
   // insert a newline instead of submitting — the send button is the only

@@ -146,4 +146,3 @@ class BackGateBridge(private val state: BackGateState) {
   @JavascriptInterface
   fun getBackAvailable(): Boolean = state.pageStackAvailable
 }
-

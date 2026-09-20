@@ -194,42 +194,47 @@ object AdbState {
       /* 非 root/受限环境读不到属性：走 NSD */
     }
     // 2. NSD/mDNS 发现（仅当属性一个都没读到；0.13.0 Q17 替换盲扫）
-    if (out.opt("pair") == JSONObject.NULL && out.opt("connect") == JSONObject.NULL) {
+    if (out.opt("pair") == JSONObject.NULL || out.opt("connect") == JSONObject.NULL) {
       try {
         val mgr = context.getSystemService(Context.NSD_SERVICE) as? android.net.nsd.NsdManager
         if (mgr != null) {
-          val pairPort = java.util.concurrent.atomic.AtomicInteger(0)
-          val connPort = java.util.concurrent.atomic.AtomicInteger(0)
-          val latch = java.util.concurrent.CountDownLatch(2)
+          val pairPort = java.util.concurrent.atomic.AtomicInteger(out.optInt("pair",0))
+          val connPort = java.util.concurrent.atomic.AtomicInteger(out.optInt("connect",0))
+          val latch = java.util.concurrent.CountDownLatch((if(pairPort.get()==0) 1 else 0)+(if(connPort.get()==0) 1 else 0))
           val resolveBoth = { info: android.net.nsd.NsdServiceInfo ->
             val type = info.serviceType ?: ""
             mgr.resolveService(info, object : android.net.nsd.NsdManager.ResolveListener {
               override fun onResolveFailed(serviceInfo: android.net.nsd.NsdServiceInfo, errorCode: Int) {
-                latch.countDown()
+                // A foreign or transient failure must not finish local discovery early.
               }
               override fun onServiceResolved(rs: android.net.nsd.NsdServiceInfo) {
+                // Only use this phone's advertisement: other paired devices may share the LAN.
+                val host=rs.host ?: return
+                val local=java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+                if(!host.isLoopbackAddress && local.none { it.address.contentEquals(host.address) })return
                 when {
-                  type.contains("_adb-tls-pairing._tcp") -> pairPort.set(rs.port)
-                  type.contains("_adb-tls-connect._tcp") -> connPort.set(rs.port)
+                  type.contains("_adb-tls-pairing._tcp") -> if(pairPort.compareAndSet(0,rs.port)) latch.countDown()
+                  type.contains("_adb-tls-connect._tcp") -> if(connPort.compareAndSet(0,rs.port)) latch.countDown()
                 }
-                latch.countDown()
               }
             })
           }
-          val listener = object : android.net.nsd.NsdManager.DiscoveryListener {
+          fun newListener() = object : android.net.nsd.NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {}
             override fun onDiscoveryStopped(serviceType: String) {}
             override fun onServiceLost(serviceInfo: android.net.nsd.NsdServiceInfo) {}
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-              latch.countDown(); latch.countDown()
+              // Await the bounded timeout; the other discovery can still succeed.
             }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
             override fun onServiceFound(serviceInfo: android.net.nsd.NsdServiceInfo) = resolveBoth(serviceInfo)
           }
-          try { mgr.discoverServices("_adb-tls-pairing._tcp", android.net.nsd.NsdManager.PROTOCOL_DNS_SD, listener) } catch (_: Throwable) { latch.countDown() }
-          try { mgr.discoverServices("_adb-tls-connect._tcp", android.net.nsd.NsdManager.PROTOCOL_DNS_SD, listener) } catch (_: Throwable) { latch.countDown() }
+          val pairListener=newListener();val connectListener=newListener()
+          try { mgr.discoverServices("_adb-tls-pairing._tcp", android.net.nsd.NsdManager.PROTOCOL_DNS_SD, pairListener) } catch (_: Throwable) { latch.countDown() }
+          try { mgr.discoverServices("_adb-tls-connect._tcp", android.net.nsd.NsdManager.PROTOCOL_DNS_SD, connectListener) } catch (_: Throwable) { latch.countDown() }
           try { latch.await(NSD_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {}
-          try { mgr.stopServiceDiscovery(listener) } catch (_: Throwable) {}
+          try { mgr.stopServiceDiscovery(pairListener) } catch (_: Throwable) {}
+          try { mgr.stopServiceDiscovery(connectListener) } catch (_: Throwable) {}
           if (pairPort.get() > 0) out.put("pair", pairPort.get())
           if (connPort.get() > 0) out.put("connect", connPort.get())
           val arr = JSONArray()
@@ -379,7 +384,7 @@ object AdbState {
         .toString()
     }
     val adb = adbBin(context)
-    val port = connectPort(context)
+    var port = connectPort(context)
     if (adb == null) return JSONObject()
       .put("ok", false)
       .put("guidance", "ADB 客户端未就绪（快照缺少 android-tools/adb）")
@@ -388,8 +393,22 @@ object AdbState {
       .put("ok", false)
       .put("guidance", "缺少连接端口（请重新配对）")
       .toString()
-    // 幂等重连（adb connect 对已连接状态安全）+ 执行
-    runAdb(engine, listOf("connect", "127.0.0.1:$port"), 20)
+    // Pairing survives TLS port rotation. Re-discover only when the stored
+    // local endpoint fails; discovery filters NSD advertisements to this host.
+    fun connectedAt(lines:List<String>,p:String)=lines.any {
+      it.trim()=="connected to 127.0.0.1:$p" || it.trim()=="already connected to 127.0.0.1:$p"
+    }
+    val connection=runAdb(engine,listOf("connect","127.0.0.1:$port"),20)
+    if(!connectedAt(connection,port))try {
+      val current=JSONObject(cachedPorts()?:discoverPorts(context,engine))
+        .optInt("connect",0).takeIf {it in 1..65535}?.toString()
+      if(current!=null && current!=port){
+        val retry=runAdb(engine,listOf("connect","127.0.0.1:$current"),20)
+        if(connectedAt(retry,current)){
+          prefs(context).edit().putString(KEY_CONNECT_PORT,current).apply();port=current
+        }
+      }
+    }catch(_:Exception){ /* Keep normal transport failure reporting, never grant new access. */ }
     // F3 远端 PATH 污染修复（2026-09-05 真机实锤）：/system/bin 脚本（input/settings/am）
     // 解析 cmd 时落到客户端传入 PATH 里的 app 私有目录（shell uid 无权读 → Permission denied）。
     // 远端统一前置纯系统 PATH（argv 直传不经本地 shell，$ 原样到达设备端）。

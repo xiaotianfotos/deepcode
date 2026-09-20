@@ -330,7 +330,7 @@ object NotifyCenter {
 
   /**
    * 六类事件投递入口（NotifyStore / NotifyBridge 的唯一出口）。
-   * @param foreground 应用在前台（弹窗类按设置抑制；DEF-NOTIFY-02 起抑制只作用于 report）
+   * @param foreground 保留旧调用契约；分流以实际可见会话与 Activity 状态为准。
    */
   fun notifyEvent(context: Context, entry: NotifyEntry, foreground: Boolean = false): Result {
     val app = context.applicationContext
@@ -362,6 +362,7 @@ object NotifyCenter {
         return Result.UNKNOWN_KIND
       }
     }
+    if(face == Face.REPORT) cancelProgress(app,entry.sessionId)
     if (!enabled(app, face.category)) {
       NotifyProbe.log(app, "dsh-notify", "notify skipped (category disabled): " + face.category)
       return Result.DISABLED
@@ -371,16 +372,17 @@ object NotifyCenter {
       listener?.onPermissionDenied()
       return Result.PERMISSION_DENIED
     }
-    // DEF-NOTIFY-02：前台抑制只作用于工作汇报（计划 §5.3 R）。提问/审批**永不**因前台抑制丢弃：
-    // isForeground 是 ActivityManager 粒度判定，一次假阳性就会让「通知内应答」整条能力消失，
-    // 而应用在前台时本来就有应用内提问 UI 兜底。
-    if (face == Face.REPORT && foreground && suppressForeground(app)) {
-      NotifyProbe.log(app, "dsh-notify", "notify suppressed (foreground): " + face.category)
-      listener?.onForegroundSuppressed(face.category)
-      return Result.SUPPRESSED_FOREGROUND
-    }
-    // DEF-NOTIFY-01：消费 entry.popup（引擎可对单条事件否决弹窗）
-    val form = formDecision(face, entry.popup)
+    val config=TaskNotificationSettings.read(app)
+    val task=face != Face.SILENT
+    if(task&&(!config.enabled||(face==Face.TODO&&!config.progress)))return Result.DISABLED
+    val power=app.getSystemService(android.os.PowerManager::class.java)
+    val keyguard=app.getSystemService(android.app.KeyguardManager::class.java)
+    val interactive=power.isInteractive&&!keyguard.isKeyguardLocked
+    val watching=config.quietWhenVisible&&suppressForeground(app)&&NotificationAttention.watching(entry.sessionId,SpeechSessionFocus.foreground,interactive)
+    val desktop=NotificationAttention.desktop(entry.sessionId,SpeechSessionFocus.foreground,interactive,android.os.SystemClock.uptimeMillis())
+    val routedSilent=TaskNoticePolicy.silent(kind,entry.outcome,watching,desktop)
+    // Interactive requests remain actionable in the drawer; only the duplicate heads-up is silenced.
+    val form = if(routedSilent) FormDecision(true,false,"already-visible") else formDecision(face, entry.popup)
     if (form.note == "interactive-popup-kept") {
       NotifyProbe.log(app, "dsh-notify", "popup=false ignored for interactive kind: " + face.category)
     }
@@ -408,12 +410,16 @@ object NotifyCenter {
       app.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
       android.content.pm.PackageManager.PERMISSION_GRANTED
 
-  /** 通知 ID：静默两类各一条固定 ID；汇报按会话同 ID 覆盖；提问/审批按 eventId 各一条。 */
+  /** 通知 ID：静默固定；进度与汇报分别按会话覆盖；提问/审批按 eventId 各一条。 */
   fun notificationId(entry: NotifyEntry, face: Face): Int = when (face) {
     Face.SILENT -> ID_WATCHDOG
-    Face.TODO -> ID_TODO
+    Face.TODO -> if(entry.sessionId.isBlank()) ID_TODO else stableId("dsh-progress:"+entry.sessionId)
     Face.REPORT -> stableId("dsh-report:" + entry.sessionId)
     else -> stableId("dsh-" + face.category + ":" + entry.eventId)
+  }
+
+  fun cancelProgress(app:Context,sessionId:String){
+    (app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId(NotifyEntry(kind="todo",sessionId=sessionId),Face.TODO))
   }
 
   /** 稳定正整数 ID（同键恒同 ID＝覆盖式更新）。 */
@@ -509,6 +515,7 @@ object NotifyCenter {
       .setAutoCancel(true)
       .setOnlyAlertOnce(!face.popup || silentOverride)
       .setWhen(System.currentTimeMillis())
+    if(face != Face.SILENT)b.addExtras(android.os.Bundle().apply{putBoolean("deepcode.task",true);putBoolean("deepcode.progress",face==Face.TODO)})
     when (face) {
       Face.SILENT -> {
         b.setContentTitle(entry.displayTitle())
@@ -519,8 +526,8 @@ object NotifyCenter {
       Face.TODO -> {
         b.setContentTitle(entry.displayTitle())
         b.setContentText(if (entry.current.isBlank()) "步骤 " + entry.done + "/" + entry.total else "当前：" + entry.current)
-        b.setSubText("步骤 " + entry.done + "/" + entry.total)
-        b.setProgress(entry.total.coerceAtLeast(0), entry.done.coerceAtLeast(0), false)
+        if(entry.total>0)b.setSubText("步骤 " + entry.done + "/" + entry.total)
+        b.setProgress(entry.total.coerceAtLeast(0), entry.done.coerceAtLeast(0), entry.total<=0)
         b.setSilent(true)
         b.setCategory(NotificationCompat.CATEGORY_PROGRESS)
         b.setOnlyAlertOnce(true)
@@ -529,7 +536,7 @@ object NotifyCenter {
         b.setContentTitle(entry.displayTitle())
         b.setContentText(reportLine(entry))
         b.setStyle(NotificationCompat.BigTextStyle().bigText(reportBigText(entry)))
-        b.setSubText("用时 " + entry.durationLabel() + " · 工具 " + entry.toolCount)
+        // Keep completion concise; full execution details remain in the session.
         if (!silentOverride) b.setPriority(NotificationCompat.PRIORITY_HIGH)
       }
       Face.QUESTION -> {
@@ -559,13 +566,13 @@ object NotifyCenter {
       b.setOnlyAlertOnce(true)
     }
     // 弹窗类锁屏脱敏（NT-19 初版：锁屏只看见通用文案）；静默降级条目不需要公版
-    if (face.popup && !silentOverride) {
+    if (face != Face.SILENT) {
       b.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
       b.setPublicVersion(
         NotificationCompat.Builder(app, channelId)
           .setSmallIcon(android.R.drawable.stat_notify_chat)
           .setContentTitle("DSH")
-          .setContentText("有一项需要你的决定")
+          .setContentText(if(face==Face.REPORT) "任务有新结果" else if(face==Face.TODO) "任务正在进行" else "有一项需要你的决定")
           .build(),
       )
     }

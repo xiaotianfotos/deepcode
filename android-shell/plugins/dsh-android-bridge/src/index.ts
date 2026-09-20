@@ -15,7 +15,8 @@
 import { readFileSync, appendFileSync, mkdirSync, statSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { decideControl, type ControlDecision, type ControlOp } from './control-policy.js'
 import { negotiateProtocol } from './control-queue.js'
 import {
@@ -62,6 +63,7 @@ export type { TurnEndKind, TurnEndKindOrUnknown, TodoProgress, ReportEntry } fro
 export type { LosslessJson } from './lossless-json.js'
 export type { ControlDecision, ControlOp } from './control-policy.js'
 export type { ControlRequest, ControlResult } from './control-queue.js'
+import type {} from '@deepseek-ai/dsh-session'
 
 export const name = 'dsh-android-bridge'
 // 注意：inject 声明的服务必须预先存在——ctx.logger 是 cordis 内置方法（不需 inject），

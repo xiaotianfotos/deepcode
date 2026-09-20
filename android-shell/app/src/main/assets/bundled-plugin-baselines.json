@@ -1,0 +1,37 @@
+{
+  "sourceSnapshotSha256": "6d1e83efc36b915526e544cd5ddd5cd587a7366f6c76ffcbd328c1127f66c011",
+  "plugins": {
+    "dsh-speech-services": {
+      "THIRD-PARTY-NOTICES.txt": [
+        "72d6b553010da952818a158892000eeba8641d4e3d4c8d20b3dbdeae8c51d0ba"
+      ],
+      "package.json": [
+        "d3221e9ff8a7a459203dedbfbf97d94a1f41c24a20a09820a38d3d800c76cca9"
+      ],
+      "LICENSE": [
+        "172385e188d5ed407deb29a006ea9d9722b8f880a2070b409327711a062dafb5"
+      ],
+      "lib/client.js": [
+        "b473c126f7e43cc40a69f7fc509ba99bf9f2e9f51f71d02b95cf9ef9d396c38b",
+        "d1a04c93952174d4eb822beb306c95aebea1da7ada30c0395f945d188ccd56d7"
+      ],
+      "lib/index.js": [
+        "549bc33dcb9e6688c553cb7214257e9ac0b17892a0b65fa3d21d0a54819d93c9"
+      ]
+    },
+    "dsh-codex-live": {
+      "package.json": [
+        "83f12a192989e7c6a6e57bd686828072ea7d880cda4628602a4e81898d446b17"
+      ],
+      "LICENSE": [
+        "172385e188d5ed407deb29a006ea9d9722b8f880a2070b409327711a062dafb5"
+      ],
+      "lib/client.js": [
+        "023e5f93e10017c0e917e9820ef5d2cd31e7d7ff4091722fc79b834142e16ab2"
+      ],
+      "lib/index.js": [
+        "037c31020b97b1159d72bb055d6116b5392e9f2d3f1f977e0cba1eb4ac4c79eb"
+      ]
+    }
+  }
+}

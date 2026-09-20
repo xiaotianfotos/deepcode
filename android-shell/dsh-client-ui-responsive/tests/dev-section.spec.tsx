@@ -122,13 +122,13 @@ describe('DevSection（开发者选项设置页）', () => {
   })
 
   it('未授予所有文件访问时提示私有目录', async () => {
-    const el = await render({ hasAllFilesAccess: () => false })
+    const el = await render({ getDevLogEnabled: () => true, hasAllFilesAccess: () => false })
     const hints = [...el.querySelectorAll('p')].map(p => p.textContent)
     expect(hints.some(h => h?.includes('应用私有目录'))).toBe(true)
   })
 
   it('已授权时提示公共目录路径', async () => {
-    const el = await render({ hasAllFilesAccess: () => true })
+    const el = await render({ getDevLogEnabled: () => true, hasAllFilesAccess: () => true })
     const hints = [...el.querySelectorAll('p')].map(p => p.textContent)
     expect(hints.some(h => h?.includes('Documents/dshdata/log'))).toBe(true)
   })
@@ -190,7 +190,7 @@ describe('DevSection（开发者选项设置页）', () => {
     const logInput = logLabel.querySelector('input') as HTMLInputElement
     expect(logInput.checked).toBe(false)
     expect(overlayToggle(el).checked).toBe(false)
-    expect(el.textContent).toContain('应用私有目录')
+    expect(el.textContent).not.toContain('应用私有目录')
 
     // 只动系统侧（壳侧真源），不碰我方 UI
     state.log = true

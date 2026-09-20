@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
   <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <uses-feature android:name="android.hardware.microphone" android:required="false" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <!-- 外部工作区：bash 进程需要访问用户选择的目录（Android 11+ 分区存储）。 -->
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
   <!-- #120（2026-09）：Android 8/9（无分区存储）外部工作区放行所需运行时权限；
@@ -10,6 +14,8 @@
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <!-- 0.13.0 F2/M3.4：开机自启（恢复用户同意的状态）与前台唤醒锁（标准档位）；电池优化白名单引导。 -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -31,10 +37,23 @@
     android:dataExtractionRules="@xml/data_extraction_rules"
     android:networkSecurityConfig="@xml/network_security_config">
 
+    <uses-library android:name="androidx.window.extensions" android:required="false" />
+
+    <service android:name=".FoldPairingService" android:exported="false" android:foregroundServiceType="dataSync" />
+
     <service
       android:name=".EngineService"
       android:exported="false"
       android:foregroundServiceType="dataSync" />
+
+    <service android:name=".LiveVoiceService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" />
+    <activity android:name=".LiveVoiceActivity" android:exported="false" android:label="GPT Live" />
+
+    <!-- Explicit user-started background voice experiment; never starts on boot. -->
+    <service android:name=".BackgroundVoiceService" android:exported="false"
+      android:foregroundServiceType="microphone" />
+    <activity android:name=".BackgroundVoiceActivity" android:exported="true"
+      android:label="DeepCode 语音实验" />
 
     <!-- 0.13.2 ADB 输入通道 IME（ADBKeyboard 协议；android_ui_input 中文输入；
          仅在被选为当前输入法时提交文本，见 AdbKeyboardService.canCommit）。 -->
@@ -64,6 +83,7 @@
     <!-- 0.13.2 W7：悬浮球实时面板（TYPE_APPLICATION_OVERLAY + FileObserver 事件流）。 -->
     <service
       android:name=".OverlayService"
+      android:foregroundServiceType="mediaPlayback"
       android:exported="false" />
 
     <!-- 0.13.5 W4：设备控制无障碍服务（语义控制面：按需取节点快照 + performAction）。
@@ -106,7 +126,7 @@
     <activity
       android:name=".MainActivity"
       android:exported="true"
-      android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+      android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|uiMode"
       android:windowSoftInputMode="adjustResize">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
@@ -137,7 +157,7 @@
     <activity
       android:name=".ConsoleActivity"
       android:exported="false"
-      android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+      android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|uiMode"
       android:windowSoftInputMode="adjustResize" />
 
     <!-- 外部阅读器打开文件（issue #52）：FileProvider 向 ACTION_VIEW 目标

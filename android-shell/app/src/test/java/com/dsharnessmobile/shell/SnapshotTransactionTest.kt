@@ -10,7 +10,7 @@ import org.junit.Test
 
 class SnapshotTransactionTest {
 
-  private val preserved = setOf("sessions", "settings.yaml", ".credentials.yaml")
+  private val preserved = SnapshotUserData.preservedNames.toSet()
 
   @Test
   fun activatesFactoryEntriesAndNeverTouchesUserData() {
@@ -23,6 +23,8 @@ class SnapshotTransactionTest {
       File(live, "home/.dsh/sessions").mkdirs()
       File(live, "home/.dsh/sessions/s1.jsonl").writeText("session")
       File(live, "home/.dsh/settings.yaml").writeText("user: true\n")
+      File(live, "home/.dsh/debian/generations/user-root").mkdirs()
+      File(live, "home/.dsh/debian/generations/user-root/packages").writeText("installed-tools")
 
       SnapshotTransaction.swap(
         filesDir = filesDir,
@@ -39,10 +41,13 @@ class SnapshotTransactionTest {
       assertEquals("[user]\n", File(live, "home/.gitconfig").readText())
       assertEquals("user: true\n", File(live, "home/.dsh/settings.yaml").readText())
       assertEquals("session", File(live, "home/.dsh/sessions/s1.jsonl").readText())
+      assertEquals("installed-tools", File(live, "home/.dsh/debian/generations/user-root/packages").readText())
       assertEquals(SnapshotTransaction.Phase.SWAPPED, SnapshotTransaction.readMarker(filesDir)?.phase)
       assertEquals("old-node", File(filesDir, ".snapshot-previous/usr/bin/node").readText())
 
       SnapshotTransaction.finish(filesDir)
+
+      assertEquals("installed-tools", File(live, "home/.dsh/debian/generations/user-root/packages").readText())
 
       assertFalse(SnapshotFs.exists(SnapshotTransaction.previousRoot(filesDir)))
       assertFalse(SnapshotFs.exists(stage))

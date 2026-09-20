@@ -82,8 +82,8 @@ class NotificationContractTest {
   fun 交互类不被前台抑制丢弃() {
     val code = codeOnly(shellSource("NotifyCenter.kt"))
     assertTrue(
-      "DEF-02：前台抑制只允许作用于 report",
-      code.contains("face == Face.REPORT && foreground && suppressForeground(app)"),
+      "Foreground routing must retain actionable notifications",
+      code.contains("TaskNoticePolicy.silent(kind,entry.outcome,watching,desktop)"),
     )
     assertFalse("不得再对全部弹窗类做前台抑制", code.contains("face.popup && foreground && suppressForeground"))
   }

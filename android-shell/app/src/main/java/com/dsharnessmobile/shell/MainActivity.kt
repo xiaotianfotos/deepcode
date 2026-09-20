@@ -11,9 +11,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
 import android.util.Log
 import android.view.View
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.webkit.JsResult
 import android.webkit.ValueCallback
@@ -46,9 +46,35 @@ import kotlin.math.ceil
  */
 class MainActivity : ComponentActivity() {
 
+  /** Forward only browser zoom shortcuts; the UI plugin owns font size and persistence. */
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    if (webViewReady && webView.isShown && webView.hasWindowFocus() && isEngineSource(webView.url.orEmpty()) &&
+      RemoteInput.handle(event) { action, seq ->
+        val payload = org.json.JSONObject().put("action", action).put("seq", seq)
+        webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('dsh-remote-input',{detail:$payload}))", null)
+      }) return true
+    if (webViewReady && webView.isShown && isEngineSource(webView.url.orEmpty()) && gamepadInput.handle(event)) return true
+    if (webViewReady && webView.isShown && event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed) {
+      val action = when (event.keyCode) {
+        KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_NUMPAD_ADD -> "increase"
+        KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> "decrease"
+        KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0 -> "reset"
+        else -> null
+      }
+      if (action != null) {
+        if (event.action == KeyEvent.ACTION_DOWN) webView.evaluateJavascript(
+          "window.dispatchEvent(new CustomEvent('dsh-content-font-shortcut',{detail:'$action'}))", null)
+        return true
+      }
+    }
+    return super.dispatchKeyEvent(event)
+  }
+
   internal lateinit var webView: WebView
+  private lateinit var foldTransition: FoldTransition
+  private lateinit var foldDualProbe: FoldDualProbe
     private set
-  internal lateinit var guideView: LinearLayout
+  internal lateinit var guideView: FrameLayout
     private set
   /** True only after WebView reported a load error for the local engine origin. */
   @Volatile
@@ -83,6 +109,15 @@ class MainActivity : ComponentActivity() {
   internal val mediaPickerController = MediaPickController(this)
   /** 窗口/页面 UI chrome（沉浸式/字体/剪贴板/常亮/主题推送）。 */
   private val uiChrome = WebUiChrome(this)
+  private val voiceController: VoiceInputController by lazy { VoiceInputController(this) { microphonePermission.launch(android.Manifest.permission.RECORD_AUDIO) } }
+  private val performanceSampler = PerformanceSampler()
+  private val gamepadInput by lazy { GamepadInput(this) { payload ->
+    if (webViewReady && isEngineSource(webView.url.orEmpty())) webView.evaluateJavascript(
+      "window.dispatchEvent(new CustomEvent('dsh-gamepad-input',{detail:$payload}))", null)
+  } }
+  private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    voiceController.permissionResult(granted)
+  }
 
   /** 崩溃标记：记录未捕获异常摘要，下次启动测试界面提示（不吞异常）。 */
   internal var crashInfo: String? = null
@@ -169,6 +204,8 @@ class MainActivity : ComponentActivity() {
     root.addView(webView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     guideView = guideRenderer.buildGuideView()
     root.addView(guideView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    foldTransition = FoldTransition(this, root, webView)
+    foldDualProbe = FoldDualProbe(this,webView)
     setContentView(root)
     ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -176,6 +213,7 @@ class MainActivity : ComponentActivity() {
       val mandatoryGestures = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures()).bottom
       val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
       val density = resources.displayMetrics.density
+      if(webView.display?.displayId==root.display?.displayId){
       // Edge-to-edge (setDecorFitsSystemWindows(false)) means the page owns the
       // status-bar strip; with the immersive toggle off the bar is visible and
       // would cover the mobile top bar / settings header (issue #135). bars.top
@@ -196,9 +234,10 @@ class MainActivity : ComponentActivity() {
         webView.setPadding(0, 0, 0, ime)
       }
       scheduleWebInsetsPush()
+      }
       if (guideViewReady) {
         val gutter = resources.getDimensionPixelSize(R.dimen.ds_guide_gutter)
-        guideView.setPadding(
+        guideRenderer.chrome.root.setPadding(
           gutter,
           gutter + bars.top,
           gutter,
@@ -233,6 +272,13 @@ class MainActivity : ComponentActivity() {
 
   override fun onResume() {
     super.onResume()
+    SpeechSessionFocus.foreground=true
+    screenForeground=true
+    applyScreenAwake()
+    if(AdbState.authorized(this)) getSystemService(android.app.NotificationManager::class.java).cancel(FoldSetup.NOTIFICATION)
+    foldTransition.foreground(true)
+    voiceController.foreground(true)
+    NetworkDns.refresh(this)
     // ST-01（真源收敛，F-APK-01）：设置页授予/撤销「所有文件访问」后回前台必须 ≤3s 收敛。
     // 此前写路径只有 setAllowSwitch/setPaired/revokePair（全在「用户拨我方开关」的动作上），
     // 在系统设置里改权限后回前台无人重写 KEY_FULLACCESS，引擎侧门1 读到陈旧值。
@@ -327,9 +373,26 @@ class MainActivity : ComponentActivity() {
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
     if (hasFocus) ImmersiveMode.apply(this, ImmersiveMode.isEnabled(this))
+    if (::foldTransition.isInitialized) foldTransition.focusChanged(hasFocus)
+  }
+
+  override fun onPause() {
+    SpeechSessionFocus.foreground=false
+    screenForeground=false
+    applyScreenAwake()
+    foldDualProbe.close()
+    foldTransition.foreground(false)
+    RemoteInput.reset()
+    gamepadInput.reset()
+    voiceController.foreground(false)
+    super.onPause()
   }
 
   override fun onDestroy() {
+    foldTransition.close()
+    RemoteInput.configure("{}")
+    gamepadInput.close()
+    voiceController.close()
     super.onDestroy()
     // #128 L1：控制面不再持有已销毁 Activity 的 WebView。
     webViewRef = null
@@ -338,14 +401,6 @@ class MainActivity : ComponentActivity() {
     engineFlow.stopMonitoring()
     dirPickerController.cancelTtl()
     guideRenderer.cancelPulse()
-    // 兜底释放：Activity 销毁时清掉可能仍持有的屏幕常亮锁。
-    try {
-      if (screenWakeLock != null) {
-        screenWakeLock?.release()
-        screenWakeLock = null
-      }
-    } catch (_: Exception) {
-    }
     if (::webView.isInitialized) {
       themeRetryRunnable?.let { webView.removeCallbacks(it) }
       webView.destroy()
@@ -356,9 +411,15 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    foldTransition.prepare()
     super.onConfigurationChanged(newConfig)
     pushSystemDark(webView)
     pushWebInsets()
+  }
+
+  override fun onRequestPermissionsResult(requestCode:Int, permissions:Array<String>, grantResults:IntArray) {
+    super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+    if(requestCode==4202 && grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED) FoldSetup.armPairing(this)
   }
 
   /**
@@ -454,6 +515,13 @@ class MainActivity : ComponentActivity() {
         return true
       }
 
+      override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: android.webkit.WebResourceResponse) {
+        super.onReceivedHttpError(view, request, response)
+        if (request.isForMainFrame && isEngineSource(request.url.toString()) && response.statusCode == 401) {
+          recoverBrowserAuthentication()
+        }
+      }
+
       override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
         if (isEngineSource(failingUrl)) {
           enginePageFailed = true
@@ -470,8 +538,11 @@ class MainActivity : ComponentActivity() {
        */
       override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        if (isEngineSource(url)) enginePageFailed = false
-        // 新文档：上一文档的层栈信号作废（页面插件在新文档里重新推）。
+        NotificationAttention.updateVisible("[]")
+        RemoteInput.reset()
+    gamepadInput.reset()
+        voiceController.release()
+        if (isEngineSource(url)) { enginePageFailed = false; guideRenderer.pageStarted() }
         if (isEngineSource(url)) backGateState.onPageStarted()
       }
 
@@ -513,6 +584,54 @@ class MainActivity : ComponentActivity() {
     }
     webView.addJavascriptInterface(
       AndroidBridge(
+        onStartupConfigure = { enabled -> runOnUiThread { guideRenderer.configureAppearance(enabled) } },
+        onStartupEnabled = { StartupAppearance.enabled(this) },
+        onSpeechSession = { id, title, enabled -> runOnUiThread { SpeechSessionFocus.update(id,title,enabled) } },
+        onLiveVoiceSession = { id, eligible -> runOnUiThread { CompanionLive.update(id,eligible) } },
+        onLiveVoiceRelease = { runOnUiThread { LiveVoiceService.instance?.release() } },
+        onLiveVoiceStart = { id ->
+          if(isFinishing || !hasWindowFocus()) "{\"ok\":false,\"error\":\"请在前台点击开启语音\"}" else {
+            runOnUiThread { runCatching {
+              if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                 (android.os.Build.VERSION.SDK_INT<33 || checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED) && android.provider.Settings.canDrawOverlays(this))
+                startForegroundService(Intent(this,LiveVoiceService::class.java).setAction(LiveVoiceService.START).putExtra("sessionId",id))
+              else startActivity(Intent(this,LiveVoiceActivity::class.java).putExtra("sessionId",id).putExtra("requestStart",true))
+            }.onFailure { android.widget.Toast.makeText(this,it.message ?: "无法开启 GPT Live",android.widget.Toast.LENGTH_LONG).show() } }; "{\"ok\":true}"
+          }
+        },
+        onLiveVoiceStop = { runOnUiThread { stopService(Intent(this, LiveVoiceService::class.java)) } },
+        onLiveVoiceOpen = { id -> runOnUiThread { if(!isFinishing && hasWindowFocus()) startActivity(Intent(this, LiveVoiceActivity::class.java).putExtra("sessionId", id)) } },
+        onFoldConfigure = { enabled -> runOnUiThread { foldTransition.configure(enabled); if(enabled) FoldSetup.maybeShow(this) } },
+        onFoldReady = { id -> runOnUiThread { foldTransition.ready(id) } },
+        onFoldStatus = { foldTransition.status() },
+        onFoldDualProbe = { enabled -> runOnUiThread { if(enabled) foldDualProbe.start() else foldDualProbe.close() } },
+        onFoldDualStatus = { foldDualProbe.status() },
+        onFoldHostPreview = { cover -> runOnUiThread { foldTransition.hostPreview(cover) } },
+        onFoldDualObserve = { runOnUiThread { foldDualProbe.observe() } },
+        onFoldSetup = { runOnUiThread { FoldSetup.show(this) } },
+        onFoldProjectionPreview = { angle -> runOnUiThread { foldTransition.projectionPreview(angle,foldDualProbe.clearSourceReady);foldDualProbe.preview(angle) } },
+        onFoldPreview = { amount -> runOnUiThread { foldTransition.preview(amount) } },
+        onChromeTheme = { color, dark -> runOnUiThread {
+          val bg = android.graphics.Color.parseColor(color)
+          guideRenderer.syncSystemBars(bg, dark)
+          webView.setBackgroundColor(bg)
+          (webView.parent as? View)?.setBackgroundColor(bg)
+          window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bg))
+        } },
+        onOpenFoldSettings = { runOnUiThread {
+          try {
+            val intent = Intent().setClassName("com.android.settings", "com.android.settings.SubSettings")
+              .putExtra(":settings:show_fragment", "com.android.settings.display.CloseLidDisplaySettingFragment")
+            if (!android.os.Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)) throw IllegalStateException()
+            startActivity(intent)
+          } catch (_: Exception) { startActivity(Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS)) }
+        } },
+        onGamepadLease = { epoch, enabled -> runOnUiThread {
+          gamepadInput.lease(epoch, enabled && webViewReady && webView.isShown && webView.hasWindowFocus() && isEngineSource(webView.url.orEmpty()))
+        } },
+        onGamepadStatus = { gamepadInput.status() },
+        voice = voiceController,
+        performance = performanceSampler,
         onPickRequest = { callbackId -> dirPickerController.pickDirectoryWithPermissionCheck(callbackId) },
         onKeepScreen = { enable -> keepScreenOn(enable) },
         onNotify = { title, text -> NotifyCenter.notify(this, "task", title, text) },
@@ -626,6 +745,33 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  private var authRecoveryRunning = false
+  private var lastAuthRecoveryAt = 0L
+
+  /** A clean snapshot may take longer than the initial auth retry budget.
+   * Exchange after a main-document 401, then navigate only after WebView has
+   * committed the cookie. Never retry subresources or foreign origins. */
+  private fun recoverBrowserAuthentication() {
+    val now = android.os.SystemClock.elapsedRealtime()
+    if (authRecoveryRunning || (lastAuthRecoveryAt > 0 && now - lastAuthRecoveryAt < 30_000L)) return
+    authRecoveryRunning = true
+    lastAuthRecoveryAt = now
+    Thread {
+      val cookie = try { EngineAuth.refresh(this, force = true) } catch (_: Exception) { null }
+      runOnUiThread {
+        if (cookie == null || isFinishing || isDestroyed || userClosedEngine) {
+          authRecoveryRunning = false
+        } else {
+          android.webkit.CookieManager.getInstance().setCookie(EngineProbe.ENGINE_URL, cookie) { accepted ->
+            authRecoveryRunning = false
+            if (accepted && !isFinishing && !isDestroyed && !userClosedEngine)
+              webView.loadUrl(EngineProbe.ENGINE_URL)
+          }
+        }
+      }
+    }.apply { isDaemon = true; name = "engine-browser-auth-recovery" }.start()
+  }
+
   /** 0.13.3：textZoom 桥与持久化退役（D6）——上游 ui-theme fontSize 原生覆盖字体调节。 */
 
   /**
@@ -696,6 +842,10 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  internal fun setFoldWindowInsets(system:Int,ime:Int,density:Float){
+    webSystemBottomInset=pxToCssPx(system,density);webImeBottomInset=pxToCssPx(ime,density);scheduleWebInsetsPush()
+  }
+
   private fun pushWebInsets(view: WebView = webView) {
     try {
       view.evaluateJavascript(
@@ -723,11 +873,10 @@ class MainActivity : ComponentActivity() {
     return ceil(physicalPx.toDouble() / density.toDouble()).toInt()
   }
 
-  /** 屏幕常亮 WakeLock（JS 桥 keepScreenOn）。单例字段持有 + 成对
-   *  acquire/release：旧实现每次调用 newWakeLock，新实例 isHeld 恒 false，
-   *  关闭路径永不 release（Review 2026-08-18 实锤的锁泄漏）。 */
-  private var screenWakeLock: PowerManager.WakeLock? = null
-
+  /** Default to awake while the user is in DeepCode. A window flag needs no new
+   * permission and cannot keep the screen awake after the Activity backgrounds. */
+  private var screenForeground=false
+  private var screenAwakeRequested=true
   /**
    * 0.13.5 W4：跳系统无障碍设置页（用户手动开启「DSH 设备控制」）。
    * Android 13+ 侧载应用可能因受限设置而看不到开关——由设置页的「一键解锁」按钮先 appops 解锁。
@@ -750,19 +899,13 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun keepScreenOn(enable: Boolean) {
-    try {
-      val power = getSystemService(Context.POWER_SERVICE) as PowerManager
-      if (enable && screenWakeLock == null) {
-        screenWakeLock = power.newWakeLock(
-          PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
-          "dsh:screen",
-        ).apply { acquire() }
-      } else if (!enable && screenWakeLock != null) {
-        screenWakeLock?.release()
-        screenWakeLock = null
-      }
-    } catch (t: Throwable) {
-      Log.e(TAG, "keepScreenOn failed: " + t.message)
+    runOnUiThread { screenAwakeRequested=enable;applyScreenAwake() }
+  }
+  private fun applyScreenAwake() {
+    if(screenForeground && screenAwakeRequested){
+      window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }else{
+      window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
   }
 

@@ -42,7 +42,7 @@
 
 - **写回**：本版只报告、不写设置。写回必须走官方 settings 缝（`ctx.settings.mutate`，
   路径 `providers.<route>.models[i].reasoningEfforts` 或 `modelOverrides.<id>.reasoningEfforts`），
-  只写模型级字段、只写端点明确声明的等级，并沿用 model-sync 的 revision/冲突重试语义。
+  只写模型级字段、只写端点明确声明的等级，并使用 settings revision 与冲突重试协议。
 - **挂载**：`scripts/profile-web.cordis.patch.yml` 加 insert + `build-apk-013.ps1` 的
   `--dsh-android` 列表加本目录，随后跑双模拟器回归（至少验证装配失败关闭、工具可调用、
   无 key 时零副作用）。

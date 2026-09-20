@@ -10,10 +10,11 @@ android {
   defaultConfig {
     applicationId = "com.dsharnessmobile.shell"
     minSdk = 26
-    // targetSdk 34: Android 15+ forbids exec of app-data ELF for targetSdk 35+
-    // (the embedded engine, bash, and every child command would need linker64
-    // wrappers); 34 keeps native exec working on Android 15/16 devices.
+    // Retain the upstream compatibility target. App-data executable restrictions
+    // still apply: Node uses linker wrappers; Debian's static loader is packaged
+    // in nativeLibraryDir, not executed from the writable rootfs.
     targetSdk = 34
+    providers.gradleProperty("runtimeAbi").orNull?.let { ndk.abiFilters += it }
     // 0.14.0-preview：versionCode 38（覆盖安装 0.13.8(37)）。本版主题（迭代计划
     // docs/NEXT-ITERATION-PLAN-2026-09-12.md 的切片 1 = B0+B1+B2）：
     // ① B0 发布阻断项清零：android_ui_dump schema 族与返回面脱钩（#204）、控制协议 V2 行句柄
@@ -34,6 +35,14 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  // Native-only experiments can retain every runtime byte from a verified installed APK.
+  providers.gradleProperty("experimentRuntimeDir").orNull?.let { donor ->
+    sourceSets.getByName("main") {
+      assets.setSrcDirs(listOf("$donor/assets"))
+      jniLibs.setSrcDirs(listOf("$donor/jniLibs"))
+    }
+  }
+
   buildFeatures {
     buildConfig = true
     // 0.14.0-preview：ShizukuUserService.aidl 生成 Stub（虚拟屏线 S5 的 bindUserService 需要）。
@@ -44,6 +53,18 @@ android {
   androidResources {
     // snapshot.tar.xz is already xz-compressed; double-compressing it breaks openFd.
     noCompress += "xz"
+  }
+
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+      keepDebugSymbols += "**/libdsh_proot_loader.so"
+      keepDebugSymbols += "**/libdsh_voice_server.so"
+      keepDebugSymbols += "**/libdsh_aligner.so"
+      keepDebugSymbols += "**/libdsh_aligner_vulkan.so"
+      keepDebugSymbols += "**/libdsh_codex.so"
+      keepDebugSymbols += "**/libdsh_codex_host.so"
+    }
   }
 
   signingConfigs {
@@ -64,7 +85,11 @@ android {
       isMinifyEnabled = false
     }
     debug {
-      signingConfig = signingConfigs.getByName("repoDebug")
+      // Keep an existing developer's update identity locally. A fresh checkout
+      // uses AGP's own debug key; no signing key is distributed with source.
+      if (rootProject.file("keystore/debug.keystore").isFile) {
+        signingConfig = signingConfigs.getByName("repoDebug")
+      }
     }
   }
 
@@ -93,7 +118,7 @@ android {
 tasks.whenTaskAdded {
   if (name == "mergeDebugAssets" || name == "mergeReleaseAssets") {
     doFirst {
-      val snap = file("src/main/assets/snapshot.tar.xz")
+      val snap = providers.gradleProperty("experimentRuntimeDir").orNull?.let { file("$it/assets/snapshot.tar.xz") } ?: file("src/main/assets/snapshot.tar.xz")
       if (!snap.exists()) {
         throw GradleException(
           "缺少运行时快照 assets/snapshot.tar.xz —— " +
@@ -105,6 +130,7 @@ tasks.whenTaskAdded {
 }
 
 dependencies {
+  implementation("io.github.webrtc-sdk:android:150.7871.01")
   // Shizuku 特权通道（0.14.0-preview 虚拟屏线 P0-0）：Maven Central 13.1.5（2023-09-21；上游
   // App 仍更新但库停更，只按 13.1.5 API 面写代码）。许可 MIT（aar POM <licenses> 实测），
   // minSdk 26 >= aar 的 24/23，无需 desugaring；settings.gradle.kts 已有 mavenCentral()。

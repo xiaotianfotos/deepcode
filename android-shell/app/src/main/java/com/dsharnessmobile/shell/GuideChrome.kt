@@ -1,23 +1,19 @@
 package com.dsharnessmobile.shell
 
-import android.graphics.Typeface
-import android.text.TextUtils
-import android.util.TypedValue
+import android.app.AlertDialog
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.*
+import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
+import android.widget.*
 import androidx.activity.ComponentActivity
 
-/** Native startup / fallback screen: brand, live status, diagnostics, actions. */
+/** Artwork is decorative; every label, progress state and recovery action stays native. */
 internal class GuideChrome(
-  val root: LinearLayout,
+  val root: FrameLayout,
   val brandBlock: View,
   val cardBlock: View,
   val actionBlock: View,
@@ -36,6 +32,10 @@ internal class GuideChrome(
   val runtimeChip: TextView,
   val storageChip: TextView,
   val versionLabel: TextView,
+  val summary: TextView,
+  val supportingText: TextView,
+  val dismissDetails: () -> Unit,
+  val ocean: Boolean = true,
 )
 
 internal class GuideCallbacks(
@@ -46,385 +46,164 @@ internal class GuideCallbacks(
   val onCopyLog: () -> Unit,
 )
 
-internal fun buildGuideChrome(activity: ComponentActivity, callbacks: GuideCallbacks): GuideChrome {
-  val res = activity.resources
-  fun dp(v: Float) = (v * res.displayMetrics.density).toInt()
-  fun dim(id: Int) = res.getDimension(id)
-  fun dpix(id: Int) = res.getDimensionPixelSize(id)
-  fun color(id: Int) = activity.getColor(id)
-  fun typeMedium() = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-
-  val hairline = (res.displayMetrics.density).toInt().coerceAtLeast(1)
-
-  val root = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-    background = android.graphics.drawable.GradientDrawable(
-      android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-      intArrayOf(color(R.color.ds_glow), color(R.color.ds_bg), color(R.color.ds_bg)),
-    )
-    visibility = View.GONE
+/** Center-crop at the same origin as the artwork, including behind system insets. */
+private class OceanBackdrop(context: Context) : Drawable() {
+  private val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.startup_ocean)
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+  override fun draw(canvas: Canvas) {
+    val scale = maxOf(bounds.width().toFloat() / bitmap.width, bounds.height().toFloat() / bitmap.height)
+    val w = bitmap.width * scale
+    val h = bitmap.height * scale
+    val x = bounds.exactCenterX() - w / 2
+    val y = bounds.exactCenterY() - h / 2
+    canvas.drawBitmap(bitmap, null, RectF(x, y, x + w, y + h), paint)
   }
-
-  val content = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-  }
-
-  // —— Brand ——
-  val iconPlate = FrameLayout(activity).apply {
-    layoutParams = LinearLayout.LayoutParams(dpix(R.dimen.ds_logo_shell), dpix(R.dimen.ds_logo_shell))
-    background = DsUi.roundRect(
-      color(R.color.ds_accent_soft),
-      dim(R.dimen.ds_radius_icon),
-      color(R.color.ds_accent),
-      hairline,
-    )
-  }
-  val iconInner = FrameLayout(activity).apply {
-    val size = dpix(R.dimen.ds_logo_size) + dp(6f)
-    layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
-    background = DsUi.roundRect(color(R.color.ds_surface), dim(R.dimen.ds_radius_sm))
-  }
-  iconInner.addView(ImageView(activity).apply {
-    setImageResource(R.mipmap.ic_launcher)
-    layoutParams = FrameLayout.LayoutParams(
-      dpix(R.dimen.ds_logo_size), dpix(R.dimen.ds_logo_size), Gravity.CENTER,
-    )
-  })
-  iconPlate.addView(iconInner)
-
-  val titleCol = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-    gravity = Gravity.CENTER_VERTICAL
-    setPadding(dpix(R.dimen.ds_space_12), 0, 0, 0)
-    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-  }
-  titleCol.addView(TextView(activity).apply {
-    text = activity.getString(R.string.app_name)
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-    setTextColor(color(R.color.ds_text_primary))
-    typeface = typeMedium()
-    letterSpacing = -0.02f
-  })
-  titleCol.addView(TextView(activity).apply {
-    text = activity.getString(R.string.ds_brand_subtitle)
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-    setTextColor(color(R.color.ds_text_secondary))
-    setPadding(0, dp(2f), 0, 0)
-  })
-
-  val versionLabel = TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-    setTextColor(color(R.color.ds_text_tertiary))
-    typeface = typeMedium()
-    background = DsUi.roundRect(color(R.color.ds_chip), dim(R.dimen.ds_radius_pill))
-    setPadding(dp(10f), dp(5f), dp(10f), dp(5f))
-  }
-
-  val brandBlock = LinearLayout(activity).apply {
-    orientation = LinearLayout.HORIZONTAL
-    gravity = Gravity.CENTER_VERTICAL
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-    lp.bottomMargin = dpix(R.dimen.ds_space_24)
-    layoutParams = lp
-  }
-  brandBlock.addView(iconPlate)
-  brandBlock.addView(titleCol)
-  brandBlock.addView(versionLabel)
-  content.addView(brandBlock)
-
-  // —— Status card (double-bezel) ——
-  val shell = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-    setPadding(dp(2f), dp(2f), dp(2f), dp(2f))
-    background = DsUi.roundRect(
-      color(R.color.ds_shell),
-      dim(R.dimen.ds_radius_shell),
-      color(R.color.ds_border),
-      hairline,
-    )
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-    lp.bottomMargin = dpix(R.dimen.ds_space_16)
-    layoutParams = lp
-  }
-  val card = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-    setPadding(dpix(R.dimen.ds_space_24), dp(22f), dpix(R.dimen.ds_space_24), dp(22f))
-    background = DsUi.roundRect(
-      color(R.color.ds_surface),
-      dim(R.dimen.ds_radius_card),
-      color(R.color.ds_hairline),
-      hairline,
-    )
-  }
-
-  val statusDot = View(activity).apply {
-    layoutParams = LinearLayout.LayoutParams(dpix(R.dimen.ds_dot), dpix(R.dimen.ds_dot)).apply {
-      gravity = Gravity.CENTER_VERTICAL
-      marginEnd = dpix(R.dimen.ds_space_8)
-    }
-    background = DsUi.oval(color(R.color.ds_text_tertiary))
-  }
-  val engineStatus = TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-    setTextColor(color(R.color.ds_text_primary))
-    typeface = typeMedium()
-    setLineSpacing(0f, 1.2f)
-    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-  }
-  val statusRow = LinearLayout(activity).apply {
-    orientation = LinearLayout.HORIZONTAL
-    gravity = Gravity.CENTER_VERTICAL
-  }
-  statusRow.addView(statusDot)
-  statusRow.addView(engineStatus)
-  card.addView(statusRow)
-
-  val statusHint = TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-    setTextColor(color(R.color.ds_text_secondary))
-    setLineSpacing(0f, 1.35f)
-    setPadding(dp(16f), dpix(R.dimen.ds_space_8), 0, 0)
-    visibility = View.GONE
-  }
-  card.addView(statusHint)
-
-  val crashBanner = TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-    setTextColor(color(R.color.ds_danger))
-    typeface = typeMedium()
-    maxLines = 3
-    ellipsize = TextUtils.TruncateAt.END
-    visibility = View.GONE
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-    lp.topMargin = dpix(R.dimen.ds_space_16)
-    layoutParams = lp
-    background = DsUi.roundRect(color(R.color.ds_danger_soft), dim(R.dimen.ds_radius_sm))
-    setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
-  }
-  card.addView(crashBanner)
-
-  val progressBar = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
-    visibility = View.GONE
-    max = 100
-    progressDrawable = DsUi.progressLayer(
-      color(R.color.ds_progress_track),
-      color(R.color.ds_accent),
-      dim(R.dimen.ds_radius_pill),
-    )
-    indeterminateTintList = android.content.res.ColorStateList.valueOf(color(R.color.ds_accent))
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, dpix(R.dimen.ds_progress_height),
-    )
-    lp.topMargin = dpix(R.dimen.ds_space_20)
-    layoutParams = lp
-  }
-  card.addView(progressBar)
-
-  val progressText = TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-    setTextColor(color(R.color.ds_text_secondary))
-    setPadding(0, dpix(R.dimen.ds_space_8), 0, 0)
-    visibility = View.GONE
-  }
-  card.addView(progressText)
-
-  val runtimeChip = chipView(activity, typeMedium())
-  val storageChip = chipView(activity, typeMedium()).apply {
-    isClickable = true
-    isFocusable = true
-    DsUi.bindPressScale(this, 0.97f)
-    setOnClickListener { callbacks.onGrantStorage() }
-  }
-  val chipRow = LinearLayout(activity).apply {
-    orientation = LinearLayout.HORIZONTAL
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-    lp.topMargin = dpix(R.dimen.ds_space_20)
-    layoutParams = lp
-  }
-  val chipLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-  val chipLpEnd = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-    marginStart = dpix(R.dimen.ds_space_8)
-  }
-  chipRow.addView(runtimeChip, chipLp)
-  chipRow.addView(storageChip, chipLpEnd)
-  card.addView(chipRow)
-
-  val logHeader = LinearLayout(activity).apply {
-    orientation = LinearLayout.HORIZONTAL
-    gravity = Gravity.CENTER_VERTICAL
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-    lp.topMargin = dpix(R.dimen.ds_space_16)
-    layoutParams = lp
-  }
-  logHeader.addView(TextView(activity).apply {
-    text = activity.getString(R.string.ds_log_title)
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-    setTextColor(color(R.color.ds_text_tertiary))
-    typeface = typeMedium()
-    letterSpacing = 0.04f
-    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-  })
-  val copyLog = TextView(activity).apply {
-    text = activity.getString(R.string.ds_copy_log)
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-    setTextColor(color(R.color.ds_accent))
-    typeface = typeMedium()
-    setPadding(dp(8f), dp(4f), 0, dp(4f))
-    isClickable = true
-    isFocusable = true
-    setOnClickListener { callbacks.onCopyLog() }
-  }
-  logHeader.addView(copyLog)
-
-  val logSummary = TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-    setTextColor(color(R.color.ds_text_tertiary))
-    typeface = Typeface.MONOSPACE
-    setLineSpacing(0f, 1.45f)
-    setPadding(0, dpix(R.dimen.ds_space_8), 0, 0)
-    maxLines = 8
-    ellipsize = TextUtils.TruncateAt.END
-  }
-
-  val logSection = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-    visibility = View.GONE
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-    lp.topMargin = dpix(R.dimen.ds_space_8)
-    layoutParams = lp
-    addView(View(activity).apply {
-      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, hairline)
-      setBackgroundColor(color(R.color.ds_hairline))
-    })
-    addView(logHeader)
-    addView(logSummary)
-  }
-  card.addView(logSection)
-  shell.addView(card)
-  content.addView(shell)
-
-  val scroll = ScrollView(activity).apply {
-    isFillViewport = true
-    overScrollMode = View.OVER_SCROLL_NEVER
-    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-    addView(
-      content,
-      FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-    )
-  }
-  root.addView(scroll)
-
-  // —— Actions (sticky) ——
-  fun makePrimary(): Button = Button(activity).apply {
-    text = activity.getString(R.string.ds_start_engine)
-    isAllCaps = false
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-    setTextColor(color(R.color.ds_text_on_accent))
-    typeface = typeMedium()
-    stateListAnimator = null
-    background = DsUi.ripple(
-      DsUi.roundRect(color(R.color.ds_accent), dim(R.dimen.ds_radius_pill)),
-      color(R.color.ds_accent_pressed),
-    )
-    layoutParams = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, dpix(R.dimen.ds_btn_height),
-    )
-    DsUi.bindPressScale(this)
-    setOnClickListener { callbacks.onStartEngine() }
-  }
-
-  fun makeSecondary(label: String, onClick: () -> Unit): Button = Button(activity).apply {
-    text = label
-    isAllCaps = false
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-    setTextColor(color(R.color.ds_text_primary))
-    typeface = typeMedium()
-    stateListAnimator = null
-    background = DsUi.ripple(
-      DsUi.roundRect(color(R.color.ds_surface_muted), dim(R.dimen.ds_radius_pill)),
-      color(R.color.ds_chip),
-    )
-    DsUi.bindPressScale(this, 0.97f)
-    setOnClickListener { onClick() }
-  }
-
-  val primaryButton = makePrimary()
-  val consoleButton = makeSecondary(activity.getString(R.string.ds_open_console), callbacks.onOpenConsole)
-  val updateButton = makeSecondary(activity.getString(R.string.ds_check_update), callbacks.onCheckUpdate)
-
-  val secondaryRow = LinearLayout(activity).apply {
-    orientation = LinearLayout.HORIZONTAL
-    val lp = LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, dpix(R.dimen.ds_btn_secondary_height),
-    )
-    lp.topMargin = dpix(R.dimen.ds_space_8)
-    layoutParams = lp
-  }
-  val half = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-  val halfEnd = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-    marginStart = dpix(R.dimen.ds_space_8)
-  }
-  secondaryRow.addView(consoleButton, half)
-  secondaryRow.addView(updateButton, halfEnd)
-
-  val actionBlock = LinearLayout(activity).apply {
-    orientation = LinearLayout.VERTICAL
-    setPadding(0, dpix(R.dimen.ds_space_12), 0, 0)
-    addView(primaryButton)
-    addView(secondaryRow)
-  }
-  root.addView(actionBlock)
-
-  return GuideChrome(
-    root = root,
-    brandBlock = brandBlock,
-    cardBlock = shell,
-    actionBlock = actionBlock,
-    engineStatus = engineStatus,
-    statusHint = statusHint,
-    statusDot = statusDot,
-    crashBanner = crashBanner,
-    progressBar = progressBar,
-    progressText = progressText,
-    logSummary = logSummary,
-    logSection = logSection,
-    copyLog = copyLog,
-    primaryButton = primaryButton,
-    consoleButton = consoleButton,
-    updateButton = updateButton,
-    runtimeChip = runtimeChip,
-    storageChip = storageChip,
-    versionLabel = versionLabel,
-  )
+  override fun setAlpha(alpha: Int) { paint.alpha = alpha; invalidateSelf() }
+  override fun setColorFilter(filter: ColorFilter?) { paint.colorFilter = filter; invalidateSelf() }
+  @Deprecated("Drawable contract") override fun getOpacity() = PixelFormat.OPAQUE
 }
 
-private fun chipView(activity: ComponentActivity, type: android.graphics.Typeface): TextView {
-  val res = activity.resources
-  return TextView(activity).apply {
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-    setTextColor(activity.getColor(R.color.ds_text_secondary))
-    typeface = type
-    gravity = Gravity.CENTER
-    maxLines = 1
-    ellipsize = TextUtils.TruncateAt.END
-    background = DsUi.roundRect(
-      activity.getColor(R.color.ds_chip),
-      res.getDimension(R.dimen.ds_radius_pill),
-    )
-    val padH = (10 * res.displayMetrics.density).toInt()
-    val padV = (7 * res.displayMetrics.density).toInt()
-    setPadding(padH, padV, padH, padV)
+/** Keep the wordmark below the whale in either orientation, with scrollable large-text recovery. */
+private class OceanGuide(context: Context) : FrameLayout(context) {
+  lateinit var pane: ScrollView
+  lateinit var details: TextView
+  lateinit var video: StartupOceanVideo
+  private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+  override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+    val w = MeasureSpec.getSize(widthSpec)
+    val h = MeasureSpec.getSize(heightSpec)
+    val usableWidth = (w - paddingLeft - paddingRight).coerceAtLeast(1)
+    video.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+    details.measure(MeasureSpec.makeMeasureSpec(usableWidth, MeasureSpec.AT_MOST),
+      MeasureSpec.makeMeasureSpec(dp(48), MeasureSpec.EXACTLY))
+    pane.measure(MeasureSpec.makeMeasureSpec(minOf(usableWidth, dp(400)), MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec((h - paddingTop - paddingBottom - details.measuredHeight).coerceAtLeast(1), MeasureSpec.AT_MOST))
+    setMeasuredDimension(w, h)
   }
+  override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+    video.layout(0, 0, width, height)
+    val footerY = height - paddingBottom - details.measuredHeight
+    // The 16:9 video leaves its lower area clear for native labels.
+    val imageHeight = maxOf(height.toFloat(), width / (16f / 9f))
+    val idealTop = ((height - imageHeight) / 2 + imageHeight * .60f).toInt()
+    val y = minOf(idealTop, footerY - pane.measuredHeight).coerceAtLeast(paddingTop)
+    val x = (width - pane.measuredWidth) / 2
+    pane.layout(x, y, x + pane.measuredWidth, y + pane.measuredHeight)
+    val dx = (width - details.measuredWidth) / 2
+    details.layout(dx, footerY, dx + details.measuredWidth, footerY + details.measuredHeight)
+  }
+}
+
+internal fun buildGuideChrome(activity: ComponentActivity, callbacks: GuideCallbacks): GuideChrome {
+  if (!StartupAppearance.enabled(activity)) return buildStandardGuideChrome(activity, callbacks)
+  fun dp(v: Int) = (v * activity.resources.displayMetrics.density).toInt()
+  val white = Color.rgb(235, 245, 255)
+  val muted = Color.rgb(161, 185, 205)
+  val accent = Color.rgb(133, 222, 255)
+  fun label(size: Float, tint: Int = white) = TextView(activity).apply {
+    textSize = size
+    setTextColor(tint)
+    gravity = Gravity.CENTER
+    setLineSpacing(0f, 1.15f)
+  }
+  fun column() = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+  fun button(title: String, onClick: () -> Unit) = Button(activity).apply {
+    text = title
+    isAllCaps = false
+    textSize = 14f
+    setTextColor(white)
+    background = DsUi.ripple(DsUi.roundRect(Color.rgb(17, 47, 69), dp(24).toFloat()), 0x334AB5DE)
+    stateListAnimator = null
+    minHeight = dp(48)
+    setPadding(dp(16), 0, dp(16), 0)
+    setOnClickListener { onClick() }
+  }
+  val root = OceanGuide(activity).apply {
+    clipToPadding = false
+    background = OceanBackdrop(activity)
+    visibility = View.GONE
+  }
+  root.video = StartupOceanVideo(activity)
+  root.addView(root.video)
+  val column = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
+  val brand = label(38f).apply {
+    text = "DeepCode"
+    typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+    letterSpacing = -.025f
+    setPadding(0, 0, 0, dp(18))
+    androidx.core.view.ViewCompat.setAccessibilityHeading(this, true)
+  }
+  column.addView(brand)
+  val progress = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
+    max = 100
+    isIndeterminate = true
+    indeterminateTintList = ColorStateList.valueOf(accent)
+    progressDrawable = DsUi.progressLayer(0xFF122C42.toInt(), accent, dp(3).toFloat())
+    visibility = View.GONE
+  }
+  column.addView(progress, LinearLayout.LayoutParams(dp(112), dp(4)).apply { bottomMargin = dp(16) })
+  val summary = label(14f, muted).apply {
+    text = "正在准备…"
+    accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+  }
+  column.addView(summary)
+  val supporting = label(12f, muted).apply { setPadding(0, dp(8), 0, 0); visibility = View.GONE }
+  column.addView(supporting)
+  val primary = button("进入 DeepCode", callbacks.onStartEngine).apply { visibility = View.GONE }
+  val actions = column().apply {
+    gravity = Gravity.CENTER_HORIZONTAL
+    addView(primary, LinearLayout.LayoutParams(dp(192), dp(48)).apply { topMargin = dp(16) })
+  }
+  column.addView(actions)
+  val scroll = ScrollView(activity).apply {
+    overScrollMode = View.OVER_SCROLL_NEVER
+    isVerticalScrollBarEnabled = false
+    addView(column, FrameLayout.LayoutParams(-1, -2))
+  }
+  root.pane = scroll
+  root.addView(scroll)
+
+  // Diagnostics remain live but are detached from the normal loading canvas.
+  val diagnostics = column().apply { setPadding(dp(24), dp(16), dp(24), dp(16)) }
+  val engineStatus = label(16f)
+  val hint = label(13f, muted)
+  val crash = label(12f, Color.rgb(255, 169, 163)).apply { visibility = View.GONE }
+  val progressText = label(12f, muted).apply { visibility = View.GONE }
+  val runtime = label(12f, muted)
+  val storage = button("存储权限", callbacks.onGrantStorage)
+  val version = label(11f, muted)
+  val log = label(11f, muted).apply {
+    typeface = Typeface.MONOSPACE
+    gravity = Gravity.START
+    setTextIsSelectable(true)
+    setPadding(0, dp(16), 0, dp(8))
+  }
+  val copy = button("复制日志", callbacks.onCopyLog)
+  val logSection = column().apply { addView(log); addView(copy); visibility = View.GONE }
+  val console = button("打开控制台", callbacks.onOpenConsole)
+  val update = button("检查更新", callbacks.onCheckUpdate)
+  listOf(engineStatus, hint, crash, progressText, runtime, storage, version, logSection, console, update).forEach {
+    diagnostics.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+  }
+  val diagnosticScroll = ScrollView(activity).apply { addView(diagnostics) }
+  var dialog: AlertDialog? = null
+  val details = label(12f, muted).apply {
+    text = "启动详情"
+    setPadding(dp(16), 0, dp(16), 0)
+    isClickable = true
+    isFocusable = true
+    setOnClickListener {
+      if (dialog?.isShowing == true) return@setOnClickListener
+      (diagnosticScroll.parent as? ViewGroup)?.removeView(diagnosticScroll)
+      dialog = AlertDialog.Builder(activity, android.R.style.Theme_Material_Dialog_Alert)
+        .setTitle("启动详情").setView(diagnosticScroll).setPositiveButton("收起", null).create()
+      dialog?.show()
+      dialog?.window?.setBackgroundDrawable(DsUi.roundRect(Color.rgb(8, 25, 42), dp(24).toFloat()))
+    }
+  }
+  root.details = details
+  root.addView(details)
+  return GuideChrome(root, brand, summary, actions, engineStatus, hint, View(activity), crash,
+    progress, progressText, log, logSection, copy, primary, console, update, runtime, storage, version,
+    summary, supporting, { dialog?.dismiss(); dialog = null })
 }

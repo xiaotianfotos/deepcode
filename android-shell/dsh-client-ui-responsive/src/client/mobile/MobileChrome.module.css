@@ -15,7 +15,7 @@
   display: none;
 }
 
-@media (max-width: 767px) {
+:global(html:is([data-dsh-mobile-form], [data-dsh-fold-workbench])) {
   .bar {
     display: flex;
     align-items: center;

@@ -91,7 +91,7 @@ export function MobileChrome({ toggleSidebar }: MobileChromeProps) {
           onClick={() => { toggleSidebar() }}
         >
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-            <path d="M2.5 4.5h13M2.5 9h13M2.5 13.5h13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M7 3v12M3 3h12v12H3Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
         </button>
       </div>

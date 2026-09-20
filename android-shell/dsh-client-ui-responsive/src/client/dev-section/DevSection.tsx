@@ -201,9 +201,9 @@ export function DevSection({ renderSlot }: DevSectionProps) {
       if (enabled && !started) {
         setOverlayMsg('已打开系统授权页；授予后请重新打开本开关')
       } else if (enabled) {
-        setOverlayMsg('悬浮球已开启：任意界面可拖拽；点开面板实时查看工具调用，可一键停止')
+        setOverlayMsg(null)
       } else {
-        setOverlayMsg('悬浮球已关闭')
+        setOverlayMsg(null)
       }
     } catch {
       setOverlayMsg('桥不可用（仅安卓宿主支持悬浮球）')
@@ -241,15 +241,11 @@ export function DevSection({ renderSlot }: DevSectionProps) {
   )
 
   const logPathHint = allFiles === false
-    ? '未授予「所有文件访问」：日志将写入应用私有目录，授权后自动切换公共目录。'
-    : '开启后按天写入 Documents/dshdata/log/dsh-<日期>.log。'
+    ? '日志位置：应用私有目录'
+    : '日志位置：Documents/dshdata/log'
 
   return (
     <div data-plugin="dev-section" onKeyDown={onKeyDown}>
-      <p className="dsh-dev-note">
-        Android 壳调试设施：控制台为快照内嵌 Termux bash；日志默认关闭。
-      </p>
-
       {/* 开发者选项子区（2026-08-23）：ADB 授权面板等设施经 settings.dev.item 挂载 */}
       {renderSlot?.('settings.dev.item', {})}
 
@@ -271,6 +267,8 @@ export function DevSection({ renderSlot }: DevSectionProps) {
         <span>开发者调试日志</span>
       </label>
 
+      {devLog && <p className="dsh-dev-hint">{logPathHint}。含对话与命令内容。</p>}
+
       {/* 0.13.2 W7：悬浮球（实时工具流 + 停止） */}
       <label className="dsh-dev-row dsh-dev-switch">
         <input
@@ -278,7 +276,7 @@ export function DevSection({ renderSlot }: DevSectionProps) {
           checked={overlayOn}
           onChange={(e) => toggleOverlay(e.target.checked)}
         />
-        <span>悬浮球（实时查看 AI 工作，可一键停止）</span>
+        <span>鲸鱼悬浮球</span>
       </label>
       {overlayMsg !== null && <p className="dsh-dev-hint">{overlayMsg}</p>}
 
@@ -288,26 +286,24 @@ export function DevSection({ renderSlot }: DevSectionProps) {
         <button type="button" className="dsh-dev-btn" onClick={importConfig}>导入配置</button>
       </div>
       {configMsg !== null && <p className="dsh-dev-hint">{configMsg}</p>}
-      <p className="dsh-dev-hint">
-        导出位置 Documents/dshdata/exports/config/settings.yaml；用文件管理器修改后点「导入配置」即可生效。
-        配置不含 API 密钥（密钥在应用私有目录，不随导出泄漏）。
-      </p>
+      <details className="dsh-dev-hint">
+        <summary>配置说明</summary>
+        <p>导出到 Documents/dshdata/exports/config/settings.yaml，修改后可重新导入。导出不含 API 密钥。</p>
+      </details>
 
       {/* F5.1/D15：文件直达临时工作区（占用展示 + 一键清理；PRD R16 手动清理 + 占用展示） */}
       {incomingBytes !== null && (
         <div className="dsh-dev-row">
           <span>
-            文件直达临时工作区占用：{fmtBytes(incomingBytes)}
+            临时文件：{fmtBytes(incomingBytes)}
           </span>
           <button type="button" className="dsh-dev-btn dsh-dev-danger" disabled={cleaning || incomingBytes === 0} onClick={() => void cleanIncoming()}>
-            {cleaning ? '清理中…' : '一键清理'}
+            {cleaning ? '清理中…' : '清理'}
           </button>
         </div>
       )}
       {incomingMsg !== null && <p className="dsh-dev-hint">{incomingMsg}</p>}
-      <p className="dsh-dev-hint">清理会删除临时工作区内的外部文件；相关会话中的文件引用将失效（D15：纯手动清理，无自动清理）。</p>
-      <p className="dsh-dev-hint">{logPathHint}</p>
-      <p className="dsh-dev-warn">日志包含命令与模型内容，仅用于排查，请及时清理。</p>
+      {incomingBytes !== null && incomingBytes > 0 && <p className="dsh-dev-hint">清理后，相关会话将无法再访问这些临时文件。</p>}
 
       {confirm !== null && (
         <div

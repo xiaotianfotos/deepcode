@@ -1,26 +1,20 @@
 package com.dsharnessmobile.shell
 
-import android.os.FileObserver
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
 
-/** live 流消费协作类（会话维）：FileObserver 监听 home/.dsh/.live.ndjson 逐行 drain 事件分发
+/** live 流消费协作类（会话维）：订阅 NotifyStore 的目录观察器，逐行 drain .live.ndjson
  *  （turn_start/tool_call/tool_result/turn_end）+ android_* 自动化避让（F7）+ debug 合成 pending 注入。 */
 class OverlayLiveFeed(private val svc: OverlayService) {
 
-  companion object {
-    /** 单次 drain 读取上限（#178 契约：生产者 bridge 每行一次 appendFileSync、行长硬上限
-     *  240/160 字符；256KB 内必含整行边界，溢出部分因按消费量推进而自然留到下一轮）。 */
-    private const val LIVE_READ_CAP_BYTES = 256 * 1024
-  }
-
-  private var watcher: FileObserver? = null
+  private var unsubscribe: (() -> Unit)? = null
   private var readOffset = 0L
 
-  /** 服务 onDestroy 联动（原 watcher?.stopWatching()）。 */
+  /** 只撤销本订阅，通知服务继续持有目录观察器。 */
   fun stopWatcher() {
-    watcher?.stopWatching()
+    unsubscribe?.invoke()
+    unsubscribe = null
   }
 
   private fun liveFile(): File = File(File(svc.filesDir, "home/.dsh"), ".live.ndjson")
@@ -29,8 +23,8 @@ class OverlayLiveFeed(private val svc: OverlayService) {
     val dir = File(svc.filesDir, "home/.dsh")
     if (!dir.exists()) dir.mkdirs()
     readOffset = liveFile().takeIf { it.exists() }?.length() ?: 0L
-    watcher = object : FileObserver(dir.absolutePath, FileObserver.MODIFY or FileObserver.CREATE) {
-      override fun onEvent(event: Int, path: String?) {
+    stopWatcher()
+    unsubscribe = NotifyStore.observeDirectory(svc) { path ->
         if (path == ".live.ndjson") drainLive()
         else if (path == ".overlay-test-pending" &&
           (svc.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
@@ -53,17 +47,10 @@ class OverlayLiveFeed(private val svc: OverlayService) {
             }
           } catch (_: Exception) {}
         }
-      }
-    }.apply { startWatching() }
+    }
     drainLive()
   }
 
-  /**
-   * live 行消费（0.13.8 #178 行边界修复）：只消费到最后一个 `\n`，偏移按**消费量**推进——
-   * 原实现 `readOffset = len` 把未消费的截断部分/半行一并跳过（偏移记账 ≠ 消费量）；
-   * 多字节截断与半行随「找不到换行就不推进」自然消失。CAP 提为具名常量并写明契约
-   * （生产者 bridge 每行一次 appendFileSync、行长硬上限 240/160 字符）。
-   */
   private fun drainLive() {
     val f = liveFile()
     if (!f.exists()) return
@@ -74,14 +61,11 @@ class OverlayLiveFeed(private val svc: OverlayService) {
         if (len < readOffset) readOffset = 0 // 文件被轮转重建
         if (len > readOffset) {
           raf.seek(readOffset)
-          val buf = ByteArray((len - readOffset).toInt().coerceAtMost(LIVE_READ_CAP_BYTES))
+          val buf = ByteArray((len - readOffset).toInt().coerceAtMost(256 * 1024))
           raf.readFully(buf)
-          val text = String(buf, Charsets.UTF_8)
-          val lastNewline = text.lastIndexOf('\n')
-          if (lastNewline < 0) return // 半行：等下次补齐，偏移不动
-          val consumable = text.substring(0, lastNewline)
-          readOffset += lastNewline + 1 // 只推进到已消费边界（非 len）
-          for (line in consumable.split("\n")) {
+          readOffset = len
+          val tail = String(buf, Charsets.UTF_8)
+          for (line in tail.split("\n")) {
             val t = line.trim()
             if (t.isNotEmpty()) lines.add(t)
           }
@@ -97,15 +81,23 @@ class OverlayLiveFeed(private val svc: OverlayService) {
         try {
           val j = JSONObject(line)
           when (j.optString("k")) {
-            // 注：turn_start 分支删除（bridge 0.1.4 起退役该行，lib 里仅剩注释——#178 取证确认死代码）
+            "turn_start" -> {
+              val s = j.optString("s", "")
+              // 轮次真正启动（bridge 0.1.3 起在产）：覆盖 WebView 侧发送/提问续跑等壳侧不可见的启动，
+              // 并确认乐观忙态。会话感知同 tool_call（#2）。
+              if (svc.activeSessionId.isEmpty() || s == svc.activeSessionId) {
+                svc.optimisticBusyAt = 0L
+                if (!svc.sessionBusy) { svc.sessionBusy = true; svc.turnStartedAt = System.currentTimeMillis() }
+                svc.setHalo(Halo.WORKING)
+                changed = true
+              }
+            }
             "tool_call" -> {
               val s = j.optString("s", "")
               // 会话感知：仅当事件属于当前目标会话（或尚无目标）才置忙，
               // 避免其它会话/陈旧行的 tool_call 让 busy 永久卡死（#2）。
               if (svc.activeSessionId.isEmpty() || s == svc.activeSessionId) {
-                // 0.13.8 #178-⑤：tool_call 续期乐观忙态（= now）而非清零——
-                // 45s 兜底退化为「45s 内无任何 live 活动」，live 唯一回退恢复有效。
-                svc.optimisticBusyAt = System.currentTimeMillis()
+                svc.optimisticBusyAt = 0L
                 if (!svc.sessionBusy) { svc.sessionBusy = true; svc.turnStartedAt = System.currentTimeMillis() }
                 svc.toolCount++
                 // 模板化显示（用户拍板）：live 行自带 name + args（bridge 0.1.1 已在产）——
@@ -117,8 +109,7 @@ class OverlayLiveFeed(private val svc: OverlayService) {
                 // 识别到自动化工具调用即自动收起面板；不自动恢复（用户点球重开），
                 // 避免恢复动作与下一发自动化点击竞态。
                 if (svc.currentToolName.startsWith("android_") && svc.expanded) svc.hidePanel()
-                // 0.13.8 G1-2（缺陷 B-2）：状态写入统一走 deriveHalo 唯一权威
-                svc.setHalo(svc.deriveHalo())
+                svc.setHalo(Halo.WORKING)
                 changed = true
               }
             }
@@ -127,7 +118,6 @@ class OverlayLiveFeed(private val svc: OverlayService) {
               // 工具结束 → 回「思考」显示（Deep diving 扫光），概览清空。
               if (svc.activeSessionId.isEmpty() || s == svc.activeSessionId) {
                 svc.currentToolName = ""; svc.currentToolSummary = ""
-                svc.optimisticBusyAt = System.currentTimeMillis() // 0.13.8 #178-⑤：活动即续期
                 changed = true
               }
             }
@@ -139,11 +129,7 @@ class OverlayLiveFeed(private val svc: OverlayService) {
                 svc.sessionBusy = false
                 svc.toolCount = 0
                 svc.currentToolName = ""; svc.currentToolSummary = ""
-                // 0.13.8 G1-2（缺陷 B-2）：turn_end 同时清理该会话的待答/待审批
-                // （轮次已结束，pending 必然过期——原实现只回白光环，卡片永挂）；
-                // 光环走 deriveHalo 唯一权威（不再直接 IDLE 绕过 PENDING）。
-                svc.panel.dropPendingFor(s)
-                svc.setHalo(svc.deriveHalo())
+                svc.setHalo(Halo.IDLE)
                 changed = true
               }
             }

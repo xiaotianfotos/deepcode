@@ -36,6 +36,14 @@ object NotifyStore {
   @Volatile
   private var started = false
   private var watcher: FileObserver? = null
+  private val directoryListeners = java.util.concurrent.CopyOnWriteArraySet<(String) -> Unit>()
+
+  /** One directory watch: Android observers of the same inode otherwise replace each other. */
+  fun observeDirectory(context: Context, listener: (String) -> Unit): () -> Unit {
+    directoryListeners.add(listener)
+    start(context)
+    return { directoryListeners.remove(listener); Unit }
+  }
 
   /** 新信道是否已在服役（决定旧信道是否只做回退）。 */
   @Volatile
@@ -62,9 +70,11 @@ object NotifyStore {
     val d = dir(app)
     if (!d.exists()) d.mkdirs()
     try {
-      watcher = object : FileObserver(d.absolutePath, FileObserver.MODIFY or FileObserver.CREATE) {
+      watcher = object : FileObserver(d.absolutePath, FileObserver.MODIFY or FileObserver.CREATE or FileObserver.MOVED_TO) {
         override fun onEvent(event: Int, path: String?) {
           if (path == FILE_NAME) drain(app)
+          else if (path == ".task-notifications.json") TaskNotificationSettings.reconcile(app)
+          if (path != null) for (listener in directoryListeners) runCatching { listener(path) }
         }
       }.apply { startWatching() }
     } catch (t: Throwable) {

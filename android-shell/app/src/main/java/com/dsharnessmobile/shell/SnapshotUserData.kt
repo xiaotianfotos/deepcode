@@ -23,7 +23,7 @@ internal object SnapshotUserData {
   internal val preservedNames = listOf(
     "sessions", "storages", "attachments", "workspaces", "undo-snapshots", "llm-deepseek",
     ".credentials.yaml", "settings.yaml", ".anonymous-user-id", ".private-layout",
-    "models-store.json", ".node-compile-cache",
+    "models-store.json", ".node-compile-cache", "debian",
   )
 
   /**

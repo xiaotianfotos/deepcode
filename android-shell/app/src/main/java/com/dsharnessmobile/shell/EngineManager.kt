@@ -356,7 +356,7 @@ class EngineManager(private val context: Context, private val pickToken: String?
       // preset.yml / agent.cordis.yml 只在缺失时播种，保留用户可能的改动。
       val skillDir = File(dir, "skills/phone-control").apply { mkdirs() }
       val skillFile = File(skillDir, "SKILL.md")
-      if (skillFile.readText().trim() != PHONE_CONTROL_SKILL.trim()) {
+      if (!skillFile.isFile || skillFile.readText().trim() != PHONE_CONTROL_SKILL.trim()) {
         skillFile.writeText(PHONE_CONTROL_SKILL)
         Log.i(TAG, "phone-control SKILL refreshed")
       }
@@ -635,10 +635,238 @@ class EngineManager(private val context: Context, private val pickToken: String?
    */
   private fun applyRuntimePatches() {
     val dshPkgs = File(usrDir, "lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai")
+    retireLegacyModelSyncInsert()
+    retireLegacyAttachmentInsert(dshPkgs)
     applyAssetPatch("patched/attachment-local-index.js",
       File(dshPkgs, "dsh-attachment-local/lib/index.js"))
     applyAssetPatch("patched/session-persistence-jsonl-index.js",
       File(dshPkgs, "dsh-session-persistence-jsonl/lib/index.js"))
+    // Only the audited 0.1.5 migration bundles may receive these compatibility assets.
+    for (name in listOf("dsh-session-format-v1-to-v2", "dsh-session-format-v2-to-v3")) {
+      val pkg = File(dshPkgs, name)
+      val version = runCatching { org.json.JSONObject(File(pkg, "package.json").readText()).optString("version") }.getOrNull()
+      if (version == "0.1.5-rc.1") {
+        applyAssetPatch("patched/$name-index.js", File(pkg, "lib/index.js"))
+      }
+    }
+    val livePkg = File(homeDir, ".dsh/profiles/web/node_modules/@dsh-android/dsh-android-codex")
+    if (livePkg.exists()) {
+      applyVersionedClientPatch("@dsh-android/dsh-android-codex", "0.1.0", "lib/index.js",
+        "codex-live-host", "b85715000846350f8d448ed9982469ff7cf832837f67dfb5c97351066258941f")
+    }
+    installLivePlugin()
+    installSpeechPlugin()
+    installStartupPlugin()
+    installTaskNotificationsPlugin()
+    installRemotePlugin()
+    applyVersionedClientPatch("@dsh-android/dsh-android-manage", "0.1.3", "lib/index.js",
+      "android-manage-host", "651f558043b18b72b07a9a85c63fccf1987149639628b7bda2b7805fa0678c0a")
+    applyVersionedClientPatch("@dsh-android/dsh-client-ui-responsive", "0.1.13", "lib/client.js",
+      "responsive-client", "99b6daf511eb16ecf22362bb364b69a0f1c0273d364139dfe85a4aa672d66f5d")
+    applyVersionedClientPatch("@dsh-android/dsh-client-ui-responsive", "0.3.3", "lib/client.js",
+      "responsive-client-033", "e5a808cf06755c394507c89f9e4a2747cbb89f5f81b8507d24e9c897ce2f4f67")
+    applyVersionedClientPatch("relay-dsh-plugin-codex", "0.2.3-rc.1", "lib/host-plugin.js",
+      "codex-image-input", "365f061540b824e50371442cdcb5f15886df4435f3616c7e92b932268c4e16ea")
+    applyVersionedClientPatch("@deepseek-ai/dsh-client-ui-voice-deck", "0.2.0", "lib/client.js",
+      "voice-deck-client", "223281ca9140161ef403e79ebef7bc6edf353ec8e5c71391b09533950900807a")
+    applyVersionedClientPatch("@dsh-android/dsh-android-voice-input", "0.1.0", "lib/client.js",
+      "voice-input-client", "9e74b3684f0c2a29d0cfb789a78d39614262d82ea39c7ffaec29c370a077f0ef")
+    applyVersionedClientPatch("@dsh-android/dsh-host-web-compat", "0.1.9", "lib/index.js",
+      "host-picker-session", "3729484b32061e09320de2cecd07ef667019af452b1c5449e12daea2811b4d63")
+    applyVersionedClientPatch("dsh-attachment-formats", "0.6.4", "lib/client.js",
+      "attachment-session-client", "35911f6da9af3363a185b6b1564f813eb249a9d99a68f52bd56400be84bb2f98")
+    applyVersionedClientPatch("@deepseek-ai/dsh-client-ui-conversation", "0.1.2-rc.1", "lib/client.js",
+      "conversation-session-client", "2ff296c75c72917d826164e95406d2e3487401de93fef9cdb66025683701268d")
+    applyVersionedClientPatch("@deepseek-ai/dsh-api-session-controller", "0.1.5-rc.1", "lib/index.js",
+      "model-catalog-host-015", "16ecb48f33996efe72868f1603223214430634c5ac4c3e8fe9060bf240e990ff")
+    applyVersionedClientPatch("@deepseek-ai/dsh-api-session-controller", "0.1.5-rc.1", "lib/client.js",
+      "session-selection-client-015", "181e4162bb1f533926854223fb5552ac88b39a7b2c8233a9bc51d4a20385524e")
+    applyVersionedClientPatch("@deepseek-ai/dsh-api-session-controller", "0.1.2-rc.1", "lib/index.js",
+      "model-catalog-host", "e8c43c85ce89710df30db8104ff98822edced90fca645956a8a8bce6da7ea2a7")
+  }
+
+  /** Seed composition once and update only verified managed files; preserve user removals. */
+  // Known bundled snapshots predate per-file receipts. Unknown user builds still fail closed.
+  private fun recognizedBundledAsset(plugin:String,name:String,actual:String,desired:String,previous:String?):Boolean {
+    if(actual==desired || actual==previous)return true
+    return runCatching {
+      val root=context.assets.open("bundled-plugin-baselines.json").bufferedReader().use { org.json.JSONObject(it.readText()) }
+      val hashes=root.getJSONObject("plugins").getJSONObject(plugin).optJSONArray(name) ?: return@runCatching false
+      (0 until hashes.length()).any { hashes.getString(it)==actual }
+    }.getOrDefault(false)
+  }
+
+  private fun installLivePlugin() {
+    val prefs=context.getSharedPreferences("runtime-patches",Context.MODE_PRIVATE)
+    val profile=File(homeDir,".dsh/profiles/web")
+    val pkg=File(profile,"node_modules/@dsh-android/dsh-codex-live")
+    if(prefs.getBoolean("codex-live-installed",false)&&!pkg.exists())return
+    try {
+      val names=listOf("package.json","LICENSE","lib/index.js","lib/client.js")
+      fun sha(bytes:ByteArray)=java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+      val desired=names.associateWith{context.assets.open("plugins/dsh-codex-live/$it").use{stream->stream.readBytes()}}
+      // A modified/newer package belongs to the user, not this APK patcher.
+      if(names.any { name -> val file=File(pkg,name);file.exists() && !recognizedBundledAsset("dsh-codex-live",name,sha(file.readBytes()),sha(desired.getValue(name)),prefs.getString("codex-live-file-$name",null)) })return
+      for(name in names){
+        val target=File(pkg,name);target.parentFile?.mkdirs()
+        applyAssetPatch("plugins/dsh-codex-live/$name",target)
+        check(target.isFile && sha(target.readBytes())==sha(desired.getValue(name)))
+        prefs.edit().putString("codex-live-file-$name",sha(desired.getValue(name))).apply()
+      }
+      if(!prefs.getBoolean("codex-live-installed",false)){
+        val composition=File(profile,"cordis.patch.yml")
+        applyAssetPatchAppend("patched/codex-live-composition.yml",composition,"@dsh-android/dsh-codex-live")
+        check(composition.readText().contains("@dsh-android/dsh-codex-live"))
+        prefs.edit().putBoolean("codex-live-installed",true).apply()
+      }
+    }catch(_:Exception){ /* A non-Live build has no optional plugin bundle. */ }
+  }
+
+  private fun installSpeechPlugin() {
+    val prefs=context.getSharedPreferences("runtime-patches",Context.MODE_PRIVATE)
+    val profile=File(homeDir,".dsh/profiles/web")
+    val pkg=File(profile,"node_modules/@dsh-android/dsh-speech-services")
+    if(prefs.getBoolean("speech-services-installed",false)&&!pkg.exists())return
+    try {
+      val names=listOf("package.json","LICENSE","THIRD-PARTY-NOTICES.txt","lib/index.js","lib/client.js")
+      fun sha(bytes:ByteArray)=java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+      val desired=names.associateWith{context.assets.open("plugins/dsh-speech-services/$it").use{stream->stream.readBytes()}}
+      // A modified/newer package belongs to the user, not this APK patcher.
+      if(names.any { name -> val file=File(pkg,name);file.exists() && !recognizedBundledAsset("dsh-speech-services",name,sha(file.readBytes()),sha(desired.getValue(name)),prefs.getString("speech-services-file-$name",null)) })return
+      for(name in names){
+        val target=File(pkg,name);target.parentFile?.mkdirs()
+        applyAssetPatch("plugins/dsh-speech-services/$name",target)
+        check(target.isFile && sha(target.readBytes())==sha(desired.getValue(name)))
+        prefs.edit().putString("speech-services-file-$name",sha(desired.getValue(name))).apply()
+      }
+      if(!prefs.getBoolean("speech-services-installed",false)){
+        val composition=File(profile,"cordis.patch.yml")
+        applyAssetPatchAppend("patched/speech-services-composition.yml",composition,"@dsh-android/dsh-speech-services")
+        check(composition.readText().contains("@dsh-android/dsh-speech-services"))
+        prefs.edit().putBoolean("speech-services-installed",true).apply()
+      }
+    }catch(_:Exception){ /* A non-speech build has no optional plugin bundle. */ }
+  }
+
+  private fun installStartupPlugin() {
+    val prefs=context.getSharedPreferences("runtime-patches",Context.MODE_PRIVATE)
+    val profile=File(homeDir,".dsh/profiles/web")
+    val pkg=File(profile,"node_modules/@dsh-android/dsh-startup-appearance")
+    if(prefs.getBoolean("startup-appearance-installed",false) &&
+      (!pkg.exists() || !File(profile,"cordis.patch.yml").let { it.exists() && it.readText().contains("@dsh-android/dsh-startup-appearance") })) {
+      StartupAppearance.configure(context, false)
+      return
+    }
+    try {
+      val names=listOf("package.json","LICENSE","lib/index.js","lib/client.js")
+      fun sha(bytes:ByteArray)=java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+      val desired=names.associateWith{context.assets.open("plugins/dsh-startup-appearance/$it").use{stream->stream.readBytes()}}
+      // A modified/newer package belongs to the user, not this APK patcher.
+      if(names.any { name -> val file=File(pkg,name);file.exists() && sha(file.readBytes()) !in listOf(sha(desired.getValue(name)),prefs.getString("startup-appearance-file-$name",null)) })return
+      for(name in names){
+        val target=File(pkg,name);target.parentFile?.mkdirs()
+        applyAssetPatch("plugins/dsh-startup-appearance/$name",target)
+        check(target.isFile && sha(target.readBytes())==sha(desired.getValue(name)))
+        prefs.edit().putString("startup-appearance-file-$name",sha(desired.getValue(name))).apply()
+      }
+      if(!prefs.getBoolean("startup-appearance-installed",false)){
+        val composition=File(profile,"cordis.patch.yml")
+        applyAssetPatchAppend("patched/startup-appearance-composition.yml",composition,"@dsh-android/dsh-startup-appearance")
+        check(composition.readText().contains("@dsh-android/dsh-startup-appearance"))
+        prefs.edit().putBoolean("startup-appearance-installed",true).apply()
+      }
+    }catch(_:Exception){ /* A non-startup build has no optional plugin bundle. */ }
+  }
+
+  private fun installTaskNotificationsPlugin() {
+    val prefs=context.getSharedPreferences("runtime-patches",Context.MODE_PRIVATE)
+    val profile=File(homeDir,".dsh/profiles/web")
+    val pkg=File(profile,"node_modules/@dsh-android/dsh-task-notifications")
+    if(prefs.getBoolean("task-notifications-installed",false) &&
+      (!pkg.exists() || !File(profile,"cordis.patch.yml").let { it.exists() && it.readText().contains("@dsh-android/dsh-task-notifications") })) {
+      TaskNotificationSettings.disable(context)
+      return
+    }
+    try {
+      val names=listOf("package.json","LICENSE","lib/index.js","lib/client.js")
+      fun sha(bytes:ByteArray)=java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+      val desired=names.associateWith{context.assets.open("plugins/dsh-task-notifications/$it").use{stream->stream.readBytes()}}
+      // A modified/newer package belongs to the user, not this APK patcher.
+      if(names.any { name -> val file=File(pkg,name);file.exists() && sha(file.readBytes()) !in listOf(sha(desired.getValue(name)),prefs.getString("task-notifications-file-$name",null)) })return
+      for(name in names){
+        val target=File(pkg,name);target.parentFile?.mkdirs()
+        applyAssetPatch("plugins/dsh-task-notifications/$name",target)
+        check(target.isFile && sha(target.readBytes())==sha(desired.getValue(name)))
+        prefs.edit().putString("task-notifications-file-$name",sha(desired.getValue(name))).apply()
+      }
+      if(!prefs.getBoolean("task-notifications-installed",false)){
+        val composition=File(profile,"cordis.patch.yml")
+        applyAssetPatchAppend("patched/task-notifications-composition.yml",composition,"@dsh-android/dsh-task-notifications")
+        check(composition.readText().contains("@dsh-android/dsh-task-notifications"))
+        prefs.edit().putBoolean("task-notifications-installed",true).apply()
+      }
+    }catch(_:Exception){ /* A non-startup build has no optional plugin bundle. */ }
+  }
+
+  private fun installRemotePlugin() {
+    val prefs=context.getSharedPreferences("runtime-patches",Context.MODE_PRIVATE)
+    val profile=File(homeDir,".dsh/profiles/web")
+    val pkg=File(profile,"node_modules/@dsh-android/dsh-xiaomi-remote")
+    if(prefs.getBoolean("xiaomi-remote-installed",false) &&
+      (!pkg.exists() || !File(profile,"cordis.patch.yml").let { it.exists() && it.readText().contains("@dsh-android/dsh-xiaomi-remote") })) {
+      RemoteInput.configure("{}")
+      return
+    }
+    try {
+      val names=listOf("package.json","LICENSE","lib/index.js","lib/client.js")
+      fun sha(bytes:ByteArray)=java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+      val desired=names.associateWith{context.assets.open("plugins/dsh-xiaomi-remote/$it").use{stream->stream.readBytes()}}
+      // A modified/newer package belongs to the user, not this APK patcher.
+      if(names.any { name -> val file=File(pkg,name);file.exists() && sha(file.readBytes()) !in listOf(sha(desired.getValue(name)),prefs.getString("xiaomi-remote-file-$name",null)) })return
+      for(name in names){
+        val target=File(pkg,name);target.parentFile?.mkdirs()
+        applyAssetPatch("plugins/dsh-xiaomi-remote/$name",target)
+        check(target.isFile && sha(target.readBytes())==sha(desired.getValue(name)))
+        prefs.edit().putString("xiaomi-remote-file-$name",sha(desired.getValue(name))).apply()
+      }
+      if(!prefs.getBoolean("xiaomi-remote-installed",false)){
+        val composition=File(profile,"cordis.patch.yml")
+        applyAssetPatchAppend("patched/xiaomi-remote-composition.yml",composition,"@dsh-android/dsh-xiaomi-remote")
+        check(composition.readText().contains("@dsh-android/dsh-xiaomi-remote"))
+        prefs.edit().putBoolean("xiaomi-remote-installed",true).apply()
+      }
+    }catch(_:Exception){ /* A non-remote build has no optional plugin bundle. */ }
+  }
+
+  private fun applyVersionedClientPatch(name: String, version: String, relative: String, patch: String, baseline: String) {
+    val profilePkg = File(homeDir, ".dsh/profiles/web/node_modules/$name")
+    val pkg = if (profilePkg.exists()) profilePkg else File(usrDir, "lib/node_modules/@deepseek-ai/dsh/node_modules/$name")
+    val target = File(pkg, relative)
+    if (!target.isFile) return
+    try {
+      val meta = org.json.JSONObject(File(pkg, "package.json").readText())
+      if (meta.optString("name") != name || meta.optString("version") != version) return
+      val bytes = context.assets.open("patched/$patch.js").use { it.readBytes() }
+      fun sha(data: ByteArray) = java.security.MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
+      val desired = sha(bytes)
+      val actual = sha(target.readBytes())
+      val prefs = context.getSharedPreferences("runtime-patches", Context.MODE_PRIVATE)
+      if (actual != desired && actual != baseline && actual != prefs.getString("$patch-sha256", null)) {
+        Log.i(TAG, "$patch skipped (unrecognized client build)")
+        return
+      }
+      if (actual != desired) {
+        val pending = File.createTempFile(".$patch-", ".tmp", target.parentFile)
+        try {
+          pending.writeBytes(bytes)
+          Files.move(pending.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } finally { pending.delete() }
+        Log.i(TAG, "$patch runtime patch applied")
+      }
+      prefs.edit().putString("$patch-sha256", desired).apply()
+    } catch (e: Exception) {
+      Log.w(TAG, "$patch runtime patch unavailable", e)
+    }
   }
 
   /** Overwrite-style patch: applies when the target differs from the bundled asset (content
@@ -688,6 +916,7 @@ class EngineManager(private val context: Context, private val pickToken: String?
   /** Starts the embedded engine. [force] is reserved for a confirmed hung boot
    * after its full cold-start deadline; routine probes must never force-restart. */
   fun startEngine(port: Int = 3080, force: Boolean = false): Boolean {
+    NetworkDns.refresh(context)
     // 快照刷新进行中禁止拉起（看门狗旁路闸门）：主流程刷新完成后自会启动；期间拉起只会
     // 起在半新半旧的运行时上。返回 true = 「无需再启动」（与冷却窗语义一致，5s 后看门狗复检）。
     if (EngineManager.snapshotRefreshing) {
@@ -1005,6 +1234,51 @@ class EngineManager(private val context: Context, private val pickToken: String?
     }
   }
 
+  private fun retireLegacyModelSyncInsert() {
+    for (profile in listOf("web", "headless")) {
+      val target = File(homeDir, ".dsh/profiles/$profile/cordis.patch.yml")
+      try {
+        if (!target.isFile) continue
+        val original = target.readText()
+        val updated = LegacyModelSyncProfile.migrate(original)
+        if (original == updated) continue
+        val atomic = android.util.AtomicFile(target)
+        val stream = atomic.startWrite()
+        try { stream.write(updated.toByteArray()); atomic.finishWrite(stream) }
+        catch (t: Throwable) { atomic.failWrite(stream); throw t }
+        LogCollector.log(TAG, "Retired factory model catalog sync mount")
+      } catch (t: Throwable) {
+        Log.w(TAG, "Model catalog sync retirement deferred", t)
+      }
+    }
+  }
+
+  private fun retireLegacyAttachmentInsert(dshPkgs: File) {
+    val marker = File(context.filesDir, ".attachment-native-entry-v1")
+    if (marker.exists()) return
+    try {
+      val upstream = File(dshPkgs, "dsh-client-ui-conversation")
+      if (org.json.JSONObject(File(upstream, "package.json").readText()).optString("version") != "0.1.5-rc.1" ||
+          !File(upstream, "lib/client.js").isFile) return
+      val target = File(homeDir, ".dsh/profiles/web/cordis.patch.yml")
+      if (!target.isFile) return
+      val original = target.readText()
+      val updated = LegacyAttachmentProfile.migrate(original)
+      if (original != updated) {
+        val backup = File(target.parentFile, "cordis.patch.yml.pre-native-attachment.bak")
+        if (!backup.exists()) backup.writeText(original)
+        val atomic = android.util.AtomicFile(target)
+        val stream = atomic.startWrite()
+        try { stream.write(updated.toByteArray()); atomic.finishWrite(stream) }
+        catch (t: Throwable) { atomic.failWrite(stream); throw t }
+        LogCollector.log(TAG, "Retired legacy factory attachment entry; native upload retained")
+      }
+      marker.writeText("done\n")
+    } catch (t: Throwable) {
+      Log.w(TAG, "Legacy attachment migration deferred", t)
+    }
+  }
+
   private fun repairSettingsSeed() {
     try {
       val f = File(File(homeDir, ".dsh"), "settings.yaml")
@@ -1053,6 +1327,9 @@ class EngineManager(private val context: Context, private val pickToken: String?
   fun stopEngine() {
     engineProcess?.destroy()
     engineProcess = null
+    // A re-created Activity/Service can adopt an already reachable native engine
+    // without a Java Process handle. Stop that engine too; no broad bin.js match.
+    try { terminateOwnedEngine() } catch (_: Exception) { }
     LogCollector.log(TAG, "engine stopped (manual)")
     // Reset the cooldown after a manual stop: returning to the foreground should allow an immediate restart.
     EngineManager.lastStartAttemptAt = 0
@@ -1095,9 +1372,9 @@ class EngineManager(private val context: Context, private val pickToken: String?
     }
     // 兜底：命中快照 node 的残留进程（`bin.js web` 是该引擎的唯一形态；pnpm/脚本子进程
     // 不含 bin.js web 特征，不会被误杀）。pkill 不可用时静默跳过。
-    // 注：与 UpdateManager 的既有清理（pkill -f bin.js）口径一致。
+    // 只匹配本应用的 Harness 完整路径，避免命中其他 bin.js 程序。
     try {
-      Runtime.getRuntime().exec(arrayOf("/system/bin/pkill", "-f", "bin.js")).waitFor()
+      terminateOwnedEngine().waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
     } catch (_: Throwable) {
     }
     // 0.13.8 #175：强制重启前必须复核端口真的释放（坑 31：pkill 在部分 ROM 不生效）——
@@ -1107,6 +1384,12 @@ class EngineManager(private val context: Context, private val pickToken: String?
       try { Thread.sleep(1_000) } catch (_: InterruptedException) {}
     }
     LogCollector.log(TAG, "killExistingEngine: port 3080 still occupied after cleanup (release recheck failed)")
+  }
+
+  private fun terminateOwnedEngine(): Process {
+    val packagePattern = context.packageName.replace(".", "[.]")
+    val pattern = "/$packagePattern/files/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin[.]js"
+    return Runtime.getRuntime().exec(arrayOf("/system/bin/pkill", "-TERM", "-f", pattern))
   }
 
   /** Reset the 90s cooldown window: auto-undo (config rollback) or user retry

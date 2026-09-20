@@ -28,7 +28,7 @@ import java.net.URL
  * 悬浮球 v2（PRD-overlay-v2，rev5 定稿）。v1 四问题 + 状态建模错误全部结构性修复：
  *
  * - 收起 = 纯白球黑鲸（34dp，与应用图标同源 ic_launcher_foreground.png，bbox 裁剪居中），
- *   状态 = 环绕低饱和光环（空闲微白 / 工作中蓝 / 离线红），球体不随状态变色（纯黑白）；
+ *   状态 = 环绕低饱和光环（空闲微白 / 工作中蓝 / 离线红），收音时鲸鱼背后按真实音量填充绿色；
  * - 展开 = 上下两区合成一个圆角矩形（radius 30dp）：上区状态行（白球徽标 + 官方
  *   Deep diving 扫光（ShimmerTextView，无图标）+ 工具 ×N 徽标 + 运行时钟 + 箭头），
  *   下区输入行（输入框 + 品牌蓝圆发送（IconSendOutline16 白箭头）+ 红圆停止白方块 rx=3）；
@@ -63,7 +63,40 @@ class OverlayService : Service() {
   // 空白+四角全是触摸黑洞，吞掉下层 WebView 手势——NOT_TOUCH_MODAL 只放行窗口外触摸）。
   internal var haloParams: WindowManager.LayoutParams? = null
   private var panelParams: WindowManager.LayoutParams? = null   // 展开面板独立窗口（键盘可原生顶起）
+  private val voiceBall = VoiceBallBackground()
+  internal fun speechBall(recording: Boolean, level: Float = 0f, phase: String = "idle") {
+    if(LiveVoiceService.instance!=null){
+      val live=LiveVoiceService.state
+      val paused=live.optBoolean("muted")||live.optBoolean("audioPaused")
+      voiceBall.update(false,0f)
+      voiceBall.phase(if(paused)"live-paused" else if(live.optString("phase")=="connecting")"preparing" else "live")
+      ballView?.contentDescription=if(paused)"GPT Live 已暂停，点击展开会话" else "GPT Live 进行中，点击展开会话"
+      return
+    }
+    voiceBall.update(recording, level)
+    voiceBall.phase(phase)
+    ballView?.contentDescription = if (recording) "正在听，点击展开语音控制" else SpeechFeedback.label(phase).ifBlank { "DeepCode，点击展开会话" }
+  }
   internal var expanded = false
+  private var ballKeysArmed = false
+  internal fun hasCompanionKeyFocus(): Boolean =
+    (expanded && panel.unitView?.hasWindowFocus() == true) ||
+      (!expanded && ballKeysArmed && rootView?.hasWindowFocus() == true)
+
+  /** A user collapse transfers the panel focus to the ball; never reclaim it from another app. */
+  internal fun refreshBallKeyFocus() {
+    if (SpeechSessionFocus.foreground || !RemoteInput.isEnabled() || !SpeechSessionFocus.enabled)
+      ballKeysArmed = false
+    val root = rootView ?: return
+    val params = rootParams ?: return
+    val receive = ballKeysArmed && !expanded
+    val flags = if (receive) WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+      else WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+    if (params.flags == flags) return
+    params.flags = flags
+    root.isFocusableInTouchMode = receive
+    try { wm.updateViewLayout(root, params); if(receive)root.requestFocus() } catch (_: Exception) {}
+  }
 
   // ── 球窗口尺寸（与球参数分离，供 clamping / halo 同步复用）──
   // 用 by lazy：Service 构造期 resources 尚为 null，字段初值若在构造时取会 NPE；
@@ -75,9 +108,8 @@ class OverlayService : Service() {
   internal val haloSizeDp by lazy { (34 * resources.displayMetrics.density).toInt() + 2 * (8 * resources.displayMetrics.density).toInt() }
 
   // ── 引擎维/会话维状态（协作类经 internal 共享） ──────────────────
-  internal var activeSessionId = ""              // 展开态目标会话（空 = 新会话）
-  /** 用户是否显式钉住目标会话（0.13.5）：钉住后不自动跟随；面板关闭时解除。 */
-  internal var userPinnedSession = false
+  internal var activeSessionId = ""              // Mirrors the current DeepCode chat / active lane.
+  internal var activeSessionTitle = ""
   internal var engineRunning = false             // 引擎维（应用级）
   internal var sessionBusy = false               // 会话维（工作中）
   internal var toolCount = 0                     // 当前轮次工具调用数
@@ -93,6 +125,7 @@ class OverlayService : Service() {
   private val halo = OverlayHalo(this)
   internal val panel = OverlayPanel(this)
   private val live = OverlayLiveFeed(this)
+  internal lateinit var speech: SpeechOverlay
 
   // 职责外移后的委托入口（调用点保持原形态）
   internal fun setHalo(h: Halo) = halo.setHalo(h)
@@ -101,10 +134,15 @@ class OverlayService : Service() {
   internal fun updateBallOnly() = panel.updateBallOnly()
 
   override fun onBind(intent: Intent?): IBinder? = null
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if(intent?.action=="speech.disable" && ::speech.isInitialized)speech.disable()
+    return START_NOT_STICKY
+  }
 
   /** 明暗切换 + 旋转/分辨率变化：换肤，并重算窗口坐标（治旋转/分屏后球出屏消失）。 */
   override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
     super.onConfigurationChanged(newConfig)
+    if(::speech.isInitialized)speech.resized()
     if (expanded) panel.applyThemeColors()
     // 旋转后旧的 x/y 可能超出新屏幕（竖屏拖到 y≈1400，转横屏 1600×900 后 y>900 → 球出屏消失）。
     val p = rootParams ?: return
@@ -119,15 +157,19 @@ class OverlayService : Service() {
     super.onCreate()
     instance = this
     wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    speech = SpeechOverlay(this)
     buildRoot()
     live.startWatcher()
     probeEngine()
     scheduleProbe()
     panel.startMux()
+    followSpeechSession()
   }
 
   override fun onDestroy() {
+    voiceBall.update(false, 0f)
     if (instance === this) instance = null
+    if(::speech.isInitialized)speech.destroy()
     live.stopWatcher()
     panel.destroy()
     // 避让帧清零（页面恢复全宽）
@@ -157,7 +199,8 @@ class OverlayService : Service() {
     val ball = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
-      background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
+      background = voiceBall
+      contentDescription = "DeepCode，点击展开会话"
       addView(whale, LinearLayout.LayoutParams((26 * dp).toInt(), (20 * dp).toInt()))
     }
     // 应用裁剪矩阵：内容 bbox → 目标大小，居中
@@ -171,7 +214,23 @@ class OverlayService : Service() {
     ballView = ball
 
     // 球窗口 = 球尺寸（整个窗口就是可触摸的球，无空白吞区 → 「互吞」根治）。
-    val root = FrameLayout(this).apply { addView(ball, FrameLayout.LayoutParams(ballSize, ballSize)) }
+    val root = object : FrameLayout(this) {
+      override fun onWindowFocusChanged(focused: Boolean) {
+        super.onWindowFocusChanged(focused)
+        if (!focused) { RemoteInput.reset(); speech.focusChanged(false) }
+      }
+      override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_OUTSIDE && ballKeysArmed) {
+          ballKeysArmed = false
+          refreshBallKeyFocus()
+        }
+        return super.onTouchEvent(event)
+      }
+      override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        (!expanded && ballKeysArmed && hasWindowFocus() &&
+          RemoteInput.handle(event, overlay=true) { action, _ -> speech.remoteAction(action) }) ||
+          speech.dispatch(event) || super.dispatchKeyEvent(event)
+    }.apply { addView(ball, FrameLayout.LayoutParams(ballSize, ballSize)) }
     val params = WindowManager.LayoutParams(
       ballSize, ballSize,
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -233,12 +292,14 @@ class OverlayService : Service() {
     if (panel.unitView == null) panel.buildUnit()
     val unit = panel.unitView ?: return
     expanded = true
+    ballKeysArmed = false
+    refreshBallKeyFocus()
     // 面板独立窗口（2026-09-03 键盘顶起重构）：IME insets 只随「与键盘相交的窗口」派发——
     // 球窗口贴顶时与键盘零相交（实测 ime bottom=0 visible=false），自监听原理性收不到。
     // 改面板独立窗口：focusable + ADJUST_PAN（默认），系统原生把面板整体顶到键盘上方、
-    // 收起自动回位（v1「球+面板一起上跳」因两者分离而根治）；球窗口恒 NOT_FOCUSABLE 不动。
+    // 收起自动回位（v1「球+面板一起上跳」因两者分离而根治）；展开期间球窗口 NOT_FOCUSABLE，收起时可承接遥控器焦点。
     // 面板宽度显式给窗口（WRAP_CONTENT + 子级 weight 会塌陷成最小宽）：屏宽减球与边距、封顶 400dp。
-    val panelW = (resources.displayMetrics.widthPixels - ballSizeDp - (64 * dp).toInt()).coerceAtMost((400 * dp).toInt())
+    val panelW = (panel.compactWidthDp() * dp).toInt()
     val pp = WindowManager.LayoutParams(
       panelW, ViewGroup.LayoutParams.WRAP_CONTENT,
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -252,7 +313,7 @@ class OverlayService : Service() {
     }
     panelParams = pp
     positionPanel()
-    panel.refreshSessionPicker()
+    speech.watch()
     unit.visibility = View.VISIBLE
     try { wm.addView(unit, pp) } catch (_: Exception) {}
     unit.post { positionPanel() }   // 首帧拿到真实宽高后再精确对位一次
@@ -264,6 +325,26 @@ class OverlayService : Service() {
   }
 
   /** 面板窗口贴球对位：优先放球右侧；放不下翻到球左侧；y 贴球顶、超高时收进屏内。 */
+  internal fun companionWidth(editing:Boolean) {
+    val pp=panelParams?:return
+    val dp=resources.displayMetrics.density
+    val width=minOf((resources.displayMetrics.widthPixels-80*dp).toInt(),((if(editing)384 else panel.compactWidthDp())*dp).toInt())
+    if(pp.width==width)return
+    pp.width=width
+    positionPanel()
+    panel.unitView?.post { positionPanel() }
+  }
+
+  internal fun followSpeechSession(){
+    val changed=activeSessionId!=SpeechSessionFocus.id
+    if(changed){panel.saveDraft(activeSessionId);sessionBusy=false;currentToolName="";currentToolSummary="";toolCount=0;optimisticBusyAt=0}
+    activeSessionId=SpeechSessionFocus.id;activeSessionTitle=SpeechSessionFocus.title
+    if(changed)panel.restoreDraft(activeSessionId)
+    if(SpeechSessionFocus.enabled)speech.watch() else speech.disable()
+    panel.onPendingChanged()
+    refreshBallKeyFocus()
+  }
+
   private fun positionPanel() {
     val p = rootParams ?: return
     val pp = panelParams ?: return
@@ -283,18 +364,13 @@ class OverlayService : Service() {
   internal fun hidePanel() {
     if (!expanded) return
     expanded = false
-    // 0.13.5：关闭面板解除「钉住」——下次展开重新跟随正在工作的会话
-    userPinnedSession = false
-    // FX-212.1（B4）：会话选择器是**独立顶层窗口**（OverlayPanel.pickerWindow，0.13.8 G2 起
-    // 不再挂在面板窗口里），收起面板必须一并收口。旧实现只 removeView(unitView)：展开面板 →
-    // 点会话行 → 不选任何条 → 收起后选择器窗口留在屏上（dumpsys window 可见该 type=2038 窗口）。
-    // 收口放在 unitView 早退之前，避免「面板视图缺失但选择器仍在」时漏收。
-    // 注：onDestroy 路径（覆盖层随进程终止的回收时机）按 U-1 真机结论暂不改，只登记。
-    panel.closePicker()
+    panel.collapseEditor()
     val unit = panel.unitView ?: return
     unit.visibility = View.GONE
     try { if (unit.parent != null) wm.removeView(unit) } catch (_: Exception) {}
     panelParams = null
+    ballKeysArmed = !SpeechSessionFocus.foreground && RemoteInput.isEnabled() && SpeechSessionFocus.enabled
+    refreshBallKeyFocus()
     panel.statusText?.let { ShimmerTextView::class.java.cast(it).setShimmering(false) }
     emitFrame()
   }
@@ -427,14 +503,8 @@ class OverlayService : Service() {
     updateBallOnly()
   }
 
-  /** issue #133：完成后自动收起面板（默认开，可在 overlay_display prefs 关掉）。 */
-  private fun autoCollapseOnDone(): Boolean = try {
-    getSharedPreferences("overlay_display", MODE_PRIVATE).getBoolean("auto_collapse_on_done", true)
-  } catch (_: Exception) {
-    true
-  }
-
-  /** 探活 tick 调用：乐观忙态超时未获 live 事件确认则回退。返回 true 表示发生了回退。 */  private fun optimisticBusyExpired(): Boolean {
+  /** 探活 tick 调用：乐观忙态超时未获 live 事件确认则回退。返回 true 表示发生了回退。 */
+  private fun optimisticBusyExpired(): Boolean {
     if (optimisticBusyAt == 0L) return false
     if (System.currentTimeMillis() - optimisticBusyAt <= 45_000L) return false
     optimisticBusyAt = 0L
@@ -445,46 +515,13 @@ class OverlayService : Service() {
   // ── 官方忙态锚点（0.13.3 D6/W3） ─────────────────────────────────
 
   /**
-   * 临时工作区 workspaceId（0.13.5）：读 `home/.dsh/storages/workspace.json`，取 title=临时工作区 的条目
-   * （读不到则退回第一个工作区；再读不到返回 null → 走引擎默认）。用途：悬浮球「新会话」必须落临时工作区，
-   * 否则在侧边栏显示为「未分组」（用户 2026-09-10 实测点名）。
-   */
-  internal fun tempWorkspaceId(): String? {
-    return try {
-      val file = java.io.File(filesDir, "home/.dsh/storages/workspace.json")
-      if (!file.isFile) return null
-      val tables = JSONObject(file.readText()).optJSONObject("tables")?.optJSONObject("workspaces") ?: return null
-      var fallback: String? = null
-      for (key in tables.keys()) {
-        val entry = tables.optJSONObject(key) ?: continue
-        if (fallback == null) fallback = key
-        if (entry.optString("title") == "临时工作区") return key
-      }
-      fallback
-    } catch (_: Throwable) {
-      null
-    }
-  }
-
-  /**
    * api-session/status emit（$events 流，args=[agentId, running]）——引擎 agent 运行态
    * 官方信号，取代旧 bridge turn_start 专门行（0.1.4 起退役）。running=true 即确认
    * 乐观忙态（optimisticBusyAt 清零）；running=false 等价 turn_end 回空闲。
    * 会话感知与 live 流一致：无目标会话=全部接受，有目标=仅该会话。
    */
   internal fun applyAgentStatus(agentId: String, running: Boolean) {
-    // 0.13.5：未钉住目标时**自动跟踪正在工作的会话**（用户诉求：悬浮球要跟得上别的对话）。
-    // 钉住 = 用户在选择器里显式选过；面板关闭时解除钉住，下次展开重新跟随。
-    if (running && !userPinnedSession && agentId.isNotEmpty() && agentId != activeSessionId) {
-      activeSessionId = agentId
-      if (expanded) panel.refreshSessionPicker()
-    }
-    val targeted = activeSessionId.isEmpty() || agentId == activeSessionId
-    // 0.13.8 G1-5（缺陷 B-5）：pending 清理与「渲染谁」解耦——running=false 对该 agentId
-    // 无条件清 pending（否则目标一换，过期卡片永生）；targeted 只影响下面的忙态渲染。
-    if (!running) {
-      panel.dropPendingFor(agentId)
-    }
+    val targeted = activeSessionId.isNotEmpty() && agentId == activeSessionId
     if (!targeted) return
     if (running) {
       optimisticBusyAt = 0L
@@ -495,20 +532,7 @@ class OverlayService : Service() {
       sessionBusy = false
       toolCount = 0
       currentToolName = ""; currentToolSummary = ""
-      // issue #133：会话完成 → 该会话的待答/待审批项已过期，先清掉（否则球停在琥珀
-      // 「等待你的回答…」）；再按设置把已展开的过期面板自动收起。
-      val dropped = panel.dropPendingFor(agentId)
       setHalo(deriveHalo())
-      if (expanded && autoCollapseOnDone() && !panel.hasDraft()) {
-        main.postDelayed({
-          if (expanded && !sessionBusy && pendingKind.isEmpty()) {
-            hidePanel()
-            if (dropped) flashStatus("已完成")
-          }
-        }, 900)
-      } else if (dropped && expanded) {
-        flashStatus("已完成")
-      }
     }
     if (expanded) panel.updateBallOnly() else updateBallOnly()
   }
@@ -600,6 +624,8 @@ class OverlayService : Service() {
   internal fun requestSend() {
     val text = panel.inputBox?.text?.toString()?.trim() ?: return
     if (text.isEmpty()) return
+    if (activeSessionId.isBlank()) { flashStatus("先在 DeepCode 打开一个会话"); return }
+    val sentSessionId=activeSessionId
     if (!engineRunning) { flashStatus("引擎离线"); return }
     panel.inputBox?.setText("")
     val steer = sessionBusy   // 发送前的忙态决定模式与提示语（成功回调里已被乐观置忙覆盖）
@@ -615,40 +641,16 @@ class OverlayService : Service() {
         if (code == 200) {
           // 发送成功：立即亮工作态（乐观忙态）——live 事件（turn_start/tool_call）到来前
           // 原本显示「空闲」，实测被用户点名（2026-09-05）；45s 无 live 确认由探活兜底回退。
-          markBusyOptimistic()
+          if(activeSessionId==sentSessionId)markBusyOptimistic()
           flashStatus(if (steer) "已插话" else "已发送")
         } else {
           // 发送失败：回填已输入文本 + 提示（避免用户以为发出去了——#4）
-          panel.inputBox?.setText(text)
+          panel.restoreFailedDraft(sentSessionId,text)
           flashStatus("发送失败（HTTP $code）")
         }
       }
     }
-    if (activeSessionId.isEmpty()) {
-      // 目标=「新会话」：先 create 再 prompt（用户拍板项：自动建会话为默认）。
-      // 0.13.5：显式带 workspaceId=临时工作区（否则新会话落「未分组」，用户实测点名）。
-      val createReq = JSONObject()
-      tempWorkspaceId()?.let { createReq.put("workspaceId", it) }
-      postRpc("session/create", JSONObject().put("request", createReq)) { code, body ->
-        if (code == 200) {
-          val sid = extractSessionId(body)
-          if (sid.isNotEmpty()) {
-            activeSessionId = sid
-            userPinnedSession = false
-            panel.refreshSessionPicker()
-            send.run()
-          } else {
-            panel.inputBox?.setText(text)
-            flashStatus("建会话失败（解析）")
-          }
-        } else {
-          panel.inputBox?.setText(text)
-          flashStatus("建会话失败（HTTP $code）")
-        }
-      }
-    } else {
-      send.run()
-    }
+    send.run()
   }
 
   /** 从 session.create 的 server-response 中取 sessionId（兼容 result.value / 嵌套 JSON 字符串两种形态）。 */
@@ -668,6 +670,7 @@ class OverlayService : Service() {
   /** 面板状态行短暂提示（发送/停止结果）。 */
   internal fun flashStatus(msg: String) {
     main.post {
+      if(::speech.isInitialized)speech.notice(msg)
       val st = panel.statusText ?: return@post
       if (expanded) {
         st.setTextColor(0xFF8AB4F8.toInt())

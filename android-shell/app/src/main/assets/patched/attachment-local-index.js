@@ -4,7 +4,7 @@ import { AttachmentError, AttachmentId, AttachmentStore, ImageVariantId, request
 import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
 import { createHash, randomUUID } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
-import { chmod, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { realpath, chmod, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import sharp from "sharp";
 //#region lib/types/compression-limiter.js
 /** Instance-owned concurrency bound for native image transformations. */
@@ -398,7 +398,19 @@ async function ensureDurableDirectory(path, boundary) {
 async function ensureDurableHome(path) {
 	const home = resolve(path);
 	if (!durableHomes.has(home)) {
+		if (process.platform === "android") {
+			// Android owns ancestors above filesDir; applications cannot fsync /data.
+			const prefix = process.env.TERMUX__PREFIX;
+			if (!prefix) throw new Error("Android attachment runtime prefix missing");
+			const boundary = await realpath(dirname(resolve(prefix)));
+			await mkdir(home, { recursive: true, mode: 448 });
+			const canonicalHome = await realpath(home);
+			if (canonicalHome !== boundary && !canonicalHome.startsWith(boundary + "/"))
+				throw new Error("Android attachment store must be inside application filesDir");
+			await ensureDurableDirectory(canonicalHome, boundary);
+		} else {
 		await ensureDurableDirectory(home, parse(home).root);
+		}
 		durableHomes.add(home);
 	}
 	return home;
@@ -473,11 +485,7 @@ async function publishImmutableAlias(root, source, target, sha256) {
 	try {
 		await ensureDurableDirectory(parent, await ensureDurableHome(dirname(dirname(resolve(root)))));
 		try {
-			await link(source, target).catch(async (error) => {
-				/* dsh-mobile link->rename fallback: Android app-private dirs reject link(2) (EACCES). */
-				if (!(error instanceof Error && "code" in error && (error.code === "EACCES" || error.code === "EPERM" || error.code === "ENOTSUP"))) throw error;
-				await rename(source, target);
-			});
+			await link(source, target);
 		} catch (error) {
 			/* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
 			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
@@ -538,20 +546,13 @@ async function publishStagedObject(root, target, staged) {
 	try {
 		await ensureDurableDirectory(parent, staged.boundary);
 		try {
-			await link(staged.path, target).catch(async (error) => {
-				/* dsh-mobile link->rename fallback: Android app-private dirs reject link(2) (EACCES). */
-				if (!(error instanceof Error && "code" in error && (error.code === "EACCES" || error.code === "EPERM" || error.code === "ENOTSUP"))) throw error;
-				await rename(staged.path, target);
-			});
+			await link(staged.path, target);
 		} catch (error) {
 			/* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
 			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
 			if (await digestFile(target) !== staged.sha256) throw new AttachmentError("Stored attachment failed integrity verification.", "ATTACHMENT_CORRUPT");
 		}
-		await unlink(staged.path).catch((error) => {
-			/* dsh-mobile: a link->rename fallback already consumed the staged file. */
-			if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-		});
+		await unlink(staged.path);
 		await chmod(target, 256);
 		const stop = resolve(root);
 		for (let level = parent; level !== stop; level = dirname(level)) {

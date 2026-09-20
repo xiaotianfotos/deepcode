@@ -400,7 +400,7 @@ export function apply(ctx: Context, config: PluginConfig = {}) {
   ctx.tools.register(applyTool)
   log?.info?.('model_capability_probe / model_capability_apply registered')
 
-  // 自动补给（决策 D5，对齐 model-sync 的启动轮）：延迟一轮，只做目录 + 被动，
+  // 自动补给（决策 D5）：延迟一轮，只做目录 + 被动，
   // 只写「缺失且无歧义」的字段；失败静默落日志。
   //
   // 回归场景（2026-09-10 用户口径）：用户在设置页「添加自定义供应商」后，
