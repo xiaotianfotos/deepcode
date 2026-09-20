@@ -1,0 +1,13 @@
+{
+  "model": "Qwen3-ForcedAligner-0.6B",
+  "upstream": "https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B",
+  "conversion": "https://huggingface.co/OpenVoiceOS/qwen3-forced-aligner-0.6b-q8-0",
+  "revision": "efe4002aa7d567851883c05f9950c869debe8847",
+  "filename": "qwen3-forced-aligner-0.6b-q8_0.gguf",
+  "bytes": 994404608,
+  "sha256": "5de69a8cfc49c95a6520f50f2f15cfce9af35bc4723a10c56fc64e51dc966b3a",
+  "runtime": "predict-woo/qwen3-asr.cpp",
+  "runtimeRevision": "6dcc586e5073fd6e85ee5728e75f0903d6c70c6c",
+  "note": "Separate weights from ASR; this GGUF uses the community runtime tensor layout, not interchangeable with llama.cpp ASR GGUF.",
+  "devicePath": "/storage/emulated/0/work/models/qwen3-forced-aligner/qwen3-forced-aligner-0.6b-q8_0.gguf"
+}

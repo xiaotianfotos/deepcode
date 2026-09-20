@@ -1,3 +1,7 @@
 # Imported unified patches contain meaningful blank context lines prefixed by
 # one space; do not rewrite them as whitespace cleanup.
 *.patch -whitespace
+
+# Preserve the exact upstream license text, including its original whitespace.
+asr-lab/app/src/main/assets/licenses/android-ndk-toolchain-NOTICE.txt -whitespace
+asr-lab/app/src/main/assets/licenses/cpp-httplib-LICENSE -whitespace

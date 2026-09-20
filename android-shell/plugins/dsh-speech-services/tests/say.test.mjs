@@ -1,0 +1,72 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {SayQueue} from '../src/say.mjs'
+test('say is explicit, short, focused, paced progress within a turn and never replayed',()=>{
+ let now=1000;const q=new SayQueue(()=>now)
+ assert.throws(()=>q.enqueue('a','完成了'))
+ assert.equal(q.poll('a',true),null)
+ q.turn('a',1)
+ assert.throws(()=>q.enqueue('b','错误泳道'))
+ assert.throws(()=>q.enqueue('a','字'.repeat(161)))
+ assert.throws(()=>q.enqueue('a','  '))
+ const result=q.enqueue('a',' 完成了 ')
+ assert.equal(result.status,'queued')
+ assert.throws(()=>q.enqueue('a','再播一条'))
+ assert.equal(q.poll('a',false),null)
+ assert.deepEqual(q.poll('a',true),{id:result.id,text:'完成了'})
+ assert.equal(q.poll('a',true),null)
+ now+=16000;q.poll('a',true)
+ assert.throws(()=>q.enqueue('a','间隔不足'))
+ now+=15000;q.poll('a',true)
+ assert.throws(()=>q.enqueue('a','完成了'))
+ // Meaningful new progress in the SAME turn is allowed after the interval.
+ q.enqueue('a','编译通过，正在验证安装')
+ q.poll('b',true);assert.equal(q.poll('a',true),null)
+})
+test('stale companion, lock/background gaps, settings changes and disposal drop speech',()=>{
+ let now=1000;const q=new SayQueue(()=>now)
+ q.poll('a',true);q.turn('a',1);q.enqueue('a','请求')
+ now+=3001;assert.equal(q.poll('a',true),null)
+ q.clear();assert.throws(()=>q.enqueue('a','已关闭'))
+ q.poll('a',true);q.turn('a',2);q.enqueue('a','不重播')
+ q.clear();assert.equal(q.poll('a',true),null)
+ now+=3001;assert.throws(()=>q.enqueue('a','接收端离线'))
+})
+test('short tasks queue acknowledgement and result without the progress cooldown',()=>{
+ let now=1000;const q=new SayQueue(()=>now)
+ q.poll('a',true);q.turn('a',1)
+ assert.equal(q.status('a').available,true);assert.equal(q.status('b').available,false)
+ q.enqueue('a','收到，正在检查','ack')
+ assert.throws(()=>q.enqueue('a','重复确认','ack'))
+ assert.throws(()=>q.enqueue('a','零碎进度','progress'))
+ q.enqueue('a','检查完成，一切正常','result')
+ assert.equal(q.poll('a',true).text,'收到，正在检查')
+ assert.equal(q.poll('a',false),null)
+ assert.equal(q.poll('a',true).text,'检查完成，一切正常')
+ assert.throws(()=>q.enqueue('a','又一个结果','result'))
+ assert.throws(()=>q.enqueue('a','结果后继续播报','progress'))
+ // The following task must not inherit the preceding task's cooldown.
+ q.turn('a',2);q.enqueue('a','收到，正在检查','ack');q.enqueue('a','检查完成，一切正常','result')
+ assert.equal(q.poll('a',true).text,'收到，正在检查')
+ assert.equal(q.poll('a',true).text,'检查完成，一切正常')
+})
+test('final result supersedes waiting progress and waits through an occupied player',()=>{
+ let now=1000;const q=new SayQueue(()=>now)
+ q.poll('a',true);q.turn('a',1);q.enqueue('a','开始检查','ack');q.poll('a',true)
+ for(let i=0;i<31;i++){now+=1000;q.poll('a',false)}
+ q.enqueue('a','正在验证','progress');q.enqueue('a','验证失败，需要调整配置','result')
+ for(let i=0;i<20;i++){now+=1000;assert.equal(q.poll('a',false),null)}
+ assert.equal(q.poll('a',true).text,'验证失败，需要调整配置')
+ assert.equal(q.poll('a',true),null)
+})
+test('leaving companion mode or starting another turn drops queued speech',()=>{
+ let now=1000;const q=new SayQueue(()=>now)
+ q.poll('a',true);q.turn('a',1);q.enqueue('a','结束','result')
+ assert.equal(q.poll('a',true,false),null);assert.equal(q.status('a').available,false)
+ q.poll('a',true);assert.equal(q.poll('a',true),null)
+ q.turn('a',2);q.enqueue('a','第二轮结果','result');q.turn('a',3)
+ assert.equal(q.poll('a',true),null)
+ assert.throws(()=>q.enqueue('a','绕过阶段','arbitrary'))
+ q.enqueue('a','新任务','ack');now+=3001
+ assert.equal(q.status('a').available,false);assert.equal(q.poll('a',true),null)
+})
