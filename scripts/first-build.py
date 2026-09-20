@@ -206,7 +206,7 @@ def main():
     actions={'plugins':plugins,'inputs':inputs,'native':native,'assemble':assemble,'verify':verify_runtime,'apk':apk}
     try:
         for name,action in actions.items():
-            if args.phase=='all' or args.phase==name: action()
+            if args.phase==name or (args.phase=='all' and name!='verify'): action()
     except (OSError,subprocess.CalledProcessError,RuntimeError) as error:
         print('FIRST_BUILD_BLOCKED:',error,file=sys.stderr)
         return 1
