@@ -26,7 +26,7 @@ ASSETS = ANDROID / 'app/src/main/assets'
 NATIVE = ANDROID / 'app/src/main/jniLibs/arm64-v8a'
 PLUGINS = ['dsh-shell-termux', 'dsh-client-ui-responsive',
     *['plugins/' + p for p in ['dsh-android-bridge','dsh-android-manage',
-    'dsh-android-linux-env','dsh-android-file-open','dsh-model-capability',
+    'dsh-android-linux-env','dsh-android-file-open','dsh-android-browser','dsh-android-vdisplay','dsh-model-capability',
     'dsh-android-fs','dsh-android-debian','dsh-android-codex','dsh-codex-live',
     'dsh-speech-services','dsh-startup-appearance','dsh-xiaomi-remote',
     'dsh-client-input-gamepad','dsh-client-ui-voice-deck','dsh-client-fold-transition',
@@ -87,9 +87,9 @@ def copy_package(source, profile):
     dest = profile/'node_modules'/meta['name']
     dest.mkdir(parents=True, exist_ok=True)
     for item in source.iterdir():
-        if item.name in ('lib','presets') and item.is_dir():
+        if item.name in ('lib','presets','skills') and item.is_dir():
             shutil.copytree(item, dest/item.name, dirs_exist_ok=True, ignore=shutil.ignore_patterns('*.map','__pycache__'))
-        elif item.name in ('package.json','LICENSE','SOURCE.json','THIRD-PARTY-NOTICES.txt'):
+        elif item.name in ('package.json','LICENSE','SOURCE.json','THIRD-PARTY-NOTICES.txt','cordis.patch.yml'):
             shutil.copy2(item, dest/item.name)
 
 
@@ -125,6 +125,10 @@ def assemble():
     profile = runtime/'home/.dsh/profiles/web'
     for folder in PLUGINS: copy_package(ANDROID/folder, profile)
     copy_package(ANDROID/'dsh-host-web-compat', profile)
+    for folder in ['dsh-undo-savepoint','dshmarketplace-plugin']:
+        copy_package(ANDROID/'vendor'/folder, profile)
+    run(['node','scripts/patches/apply-patches.mjs',profile/'node_modules','--scope','vendor','--apply'],ANDROID)
+    run(['node','scripts/patches/apply-patches.mjs',runtime,'--scope','engine','--apply'],ANDROID)
     script('stage-upstream-experiment.py','--abi','arm64','--archive',ARCHIVE,'--runtime',runtime,'--assets',ASSETS)
     script('stage-codex-live.py')
     bundle = ROOT/'.tools/debian-bundle/arm64'

@@ -27,7 +27,7 @@ retire_tree(a.runtime)
 composition = (ROOT/'android-shell/scripts/profile-web.cordis.patch.yml').read_text()
 folders = ['dsh-android-fs','dsh-android-debian','dsh-android-codex','dsh-codex-live',
            'dsh-speech-services','dsh-startup-appearance','dsh-xiaomi-remote',
-           'dsh-client-input-gamepad','dsh-client-ui-voice-deck','dsh-client-fold-transition','dsh-android-voice-input']
+           'dsh-client-input-gamepad','dsh-client-ui-voice-deck','dsh-client-fold-transition','dsh-android-voice-input','dsh-android-performance']
 for folder in [ROOT/'android-shell/dsh-client-ui-responsive',
                *[ROOT/'android-shell/plugins'/n for n in folders],
                ROOT/'android-shell/vendor/relay-dsh-plugin-codex',ROOT/'android-shell/vendor/relay-dsh-plugin-session-import']:
@@ -43,7 +43,7 @@ for folder in [ROOT/'android-shell/dsh-client-ui-responsive',
     ident = {
         'dsh-android-fs':'fs-android', 'dsh-android-debian':'android-debian',
         'dsh-android-codex':'android-codex', 'dsh-codex-live':'codex-live',
-        'dsh-android-voice-input':'android-voice-input', 'dsh-speech-services':'speech-services',
+        'dsh-android-voice-input':'android-voice-input', 'dsh-android-performance':'android-performance', 'dsh-speech-services':'speech-services',
         'dsh-startup-appearance':'startup-appearance', 'dsh-xiaomi-remote':'xiaomi-remote',
         'relay-dsh-plugin-codex':'android-codex-client',
         'relay-dsh-plugin-session-import':'android-codex-import',
@@ -52,7 +52,7 @@ for folder in [ROOT/'android-shell/dsh-client-ui-responsive',
     if name=='relay-dsh-plugin-codex': config='      config:\n        androidClientOnly: true\n'
     # Android Codex binaries are currently ARM64-only. Keep their packages in
     # this emulator image, but don't pretend the x86_64 image can execute them.
-    disabled = '      disabled: true\n' if a.abi == 'x86_64' and ident in ('android-codex','codex-live') else ''
+    disabled = '      disabled: true\n' if ident == 'android-performance' or (a.abi == 'x86_64' and ident in ('android-codex','codex-live')) else ''
     composition += f"\n- insert:\n    - id: {ident}\n      name: '{name}'\n" + config + disabled
 composition += '\n- id: fs-sandbox\n  disabled: true\n'
 (profile/'cordis.patch.yml').write_text(composition)
